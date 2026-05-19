@@ -344,18 +344,20 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
  
   useEffect(() => {
 const load = async () => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("approved_riders_with_location")
     .select("*")
     .neq("id", profile.id);
-      if (data?.length) {
-        setRiders(data.map(r => ({
-          ...r, lat: r.locations?.[0]?.lat, lng: r.locations?.[0]?.lng,
-          current_speed: r.locations?.[0]?.speed || 0,
-          status: r.locations?.[0]?.lat ? "online" : "offline"
-        })));
-      } else setRiders(MOCK_RIDERS);
-    };
+  
+  if (data && data.length > 0) {
+    setRiders(data.map(r => ({
+      ...r,
+      current_speed: r.current_speed || 0,
+      status: r.lat ? "online" : "offline",
+    })));
+  }
+  // احذف السطر الذي يضع MOCK_RIDERS
+};
     load();
   }, [profile.id]);
  
