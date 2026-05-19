@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+ 
+/* ─── Mobile PWA optimizations ─── */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+ 
+html, body, #root {
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #030712;
+}
+ 
+/* Safe area for notch/home indicator */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+ 
+/* Leaflet dark popup */
+.leaflet-popup-content-wrapper {
+  background: #111827 !important;
+  border: 1px solid #374151 !important;
+  border-radius: 16px !important;
+  padding: 0 !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6) !important;
+}
+.leaflet-popup-tip { background: #111827 !important; }
+.leaflet-popup-content { margin: 0 !important; }
+ 
+/* Leaflet tiles dark */
+.leaflet-container { background: #111 !important; }
+ 
+/* Hide scrollbar */
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; }
+ 
+/* Smooth transitions */
+* { -webkit-font-smoothing: antialiased; }
+ 
+/* PWA manifest colors */
+:root {
+  --orange: #f97316;
+  --bg: #030712;
+}
