@@ -98,17 +98,36 @@ function useGPS(profileId, stealth) {
     }, 5000);
   }, [upload]);
  
-  const stop = useCallback(async () => {
-    if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    setStatus("idle");
-    if (profileId) await supabase.from("locations").update({ speed: 0 }).eq("profile_id", profileId);
-  }, [profileId]);
+const stop = useCallback(async () => {
+  if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
+  if (intervalRef.current) clearInterval(intervalRef.current);
+  setStatus("idle");
+  // احذف الموقع نهائياً عند الإيقاف
+  if (profileId) {
+    await supabase.from("locations")
+      .delete()
+      .eq("profile_id", profileId);
+  }
+}, [profileId]);
  
   useEffect(() => () => {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
   }, []);
+
+  useEffect(() => {
+  const handleUnload = async () => {
+    if (profileId) {
+      await supabase.from("locations").delete().eq("profile_id", profileId);
+    }
+  };
+  window.addEventListener("beforeunload", handleUnload);
+  window.addEventListener("pagehide", handleUnload);
+  return () => {
+    window.removeEventListener("beforeunload", handleUnload);
+    window.removeEventListener("pagehide", handleUnload);
+  };
+}, [profileId]);
  
   return { loc, speed, status, error, start, stop };
 }
