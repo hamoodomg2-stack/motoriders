@@ -324,10 +324,11 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
  
   useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase.from("profiles")
-        .select("*, locations(lat,lng,speed,updated_at)")
-        .eq("status", "approved").neq("id", profile.id);
+const load = async () => {
+  const { data } = await supabase
+    .from("approved_riders_with_location")
+    .select("*")
+    .neq("id", profile.id);
       if (data?.length) {
         setRiders(data.map(r => ({
           ...r, lat: r.locations?.[0]?.lat, lng: r.locations?.[0]?.lng,
