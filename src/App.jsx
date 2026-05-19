@@ -348,7 +348,9 @@ const load = async () => {
     .from("approved_riders_with_location")
     .select("*")
     .neq("id", profile.id);
-  
+
+  console.log("Riders data:", data, "Error:", error);
+
   if (data && data.length > 0) {
     setRiders(data.map(r => ({
       ...r,
@@ -356,7 +358,6 @@ const load = async () => {
       status: r.lat ? "online" : "offline",
     })));
   }
-  // احذف السطر الذي يضع MOCK_RIDERS
 };
     load();
   }, [profile.id]);
