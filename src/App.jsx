@@ -527,7 +527,11 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       </div>
  
       <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#111" }} zoomControl={false}>
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution="© CARTO" />
+        <TileLayer
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+         attribution="© Esri © Google"
+        maxZoom={19}
+/>
         {loc && !stealth && <Marker position={[loc.lat, loc.lng]} icon={createRiderIcon(profile?.full_name || "أنت", speed, true)} />}
         {riders.filter(r => r.lat && r.lng).map(r => (
           <Marker key={r.id} position={[r.lat, r.lng]} icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online")}
