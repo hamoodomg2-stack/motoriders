@@ -529,7 +529,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#111" }} zoomControl={false}>
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-         attribution="© Esri © Google"
+         attribution="iims.13"
         maxZoom={19}
 />
         {loc && !stealth && <Marker position={[loc.lat, loc.lng]} icon={createRiderIcon(profile?.full_name || "أنت", speed, true)} />}
