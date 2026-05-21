@@ -209,7 +209,21 @@ function AuthScreen({ mode, setMode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) throw new Error("البريد أو كلمة المرور غير صحيحة");
       } else {
-        if (!VALID_INVITE_CODES.includes(code.toUpperCase())) throw new Error("كود الدعوة غير صحيح!");
+        const { data: codeData } = await supabase
+          .from("invite_codes")
+          .select("*")
+          .eq("code", code.toUpperCase())
+          .eq("is_used", false)
+          .gt("expires_at", new Date().toISOString())
+          .single();
+
+        if (!codeData) throw new Error("كود الدعوة غير صحيح أو منتهي الصلاحية!");
+
+        // ضع الكود كـ مستخدم
+        await supabase.from("invite_codes")
+          .update({ is_used: true, used_by: data.user.id })
+          .eq("code", code.toUpperCase());
+          
         if (!name || !bike) throw new Error("يرجى تعبئة جميع الحقول");
         const { data, error } = await supabase.auth.signUp({ email, password: pass });
         if (error) throw new Error(error.message);
@@ -418,8 +432,8 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
         </div>
         <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
         <div className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold ${gpsStatus === "active" ? "bg-green-500/20 text-green-400" :
-            gpsStatus === "searching" ? "bg-yellow-500/20 text-yellow-400" :
-              gpsStatus === "error" ? "bg-red-500/20 text-red-400" : "bg-gray-800 text-gray-500"}`}>
+          gpsStatus === "searching" ? "bg-yellow-500/20 text-yellow-400" :
+            gpsStatus === "error" ? "bg-red-500/20 text-red-400" : "bg-gray-800 text-gray-500"}`}>
           {gpsStatus === "searching" && <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={10} /></motion.div>}
           {gpsStatus === "active" && <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}><div className="w-1.5 h-1.5 bg-green-400 rounded-full" /></motion.div>}
           <Navigation size={11} />
@@ -834,6 +848,9 @@ function AdminPanel({ session, onSignOut }) {
   const [actionId, setActionId] = useState(null);
   const [toast, setToast] = useState(null);
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, banned: 0 });
+  const [codes, setCodes] = useState([]);
+  const [codesTab, setCodesTab] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [adminProfile, setAdminProfile] = useState(null);
 
   useEffect(() => {
@@ -851,7 +868,28 @@ function AdminPanel({ session, onSignOut }) {
       setProfiles(data);
       setStats({ total: data.length, pending: data.filter(p => p.status === "pending").length, approved: data.filter(p => p.status === "approved").length, banned: data.filter(p => p.status === "banned").length });
     }
+    const { data: codesData } = await supabase.from("invite_codes").select("*").order("created_at", { ascending: false });
+    if (codesData) setCodes(codesData);
     setLoading(false);
+  };
+
+  const generateCode = async () => {
+    setGenerating(true);
+    const code = "MOTO" + Math.random().toString(36).substring(2, 7).toUpperCase();
+    await supabase.from("invite_codes").insert({
+      code,
+      created_by: session.user.id,
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await fetchAll();
+    showToast(`🎟️ تم إنشاء كود: ${code}`, "success");
+    setGenerating(false);
+  };
+
+  const deleteCode = async (id) => {
+    await supabase.from("invite_codes").delete().eq("id", id);
+    setCodes(prev => prev.filter(c => c.id !== id));
+    showToast("🗑️ تم حذف الكود", "info");
   };
 
   const updateStatus = async (id, newStatus, name) => {
