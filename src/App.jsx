@@ -10,20 +10,20 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
- 
+
 /* ─── SUPABASE — ضع بياناتك هنا ─── */
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://hygfxmdsadiityhgifsz.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Z2Z4bWRzYWRpaXR5aGdpZnN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzY2MzUsImV4cCI6MjA5NDcxMjYzNX0.7tRlIaDyfgjZR4kJNHdIvfrcIwf-_cr5BQWjF3v7xgg";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
- 
+
 const VALID_INVITE_CODES = ["MOTO2024", "RIDER001", "SPEED99", "BIKER42"];
- 
+
 const MOCK_RIDERS = [
   { id: "m1", full_name: "أحمد السريع", bike_type: "Yamaha R1", speed: 120, current_speed: 120, lat: 24.688, lng: 46.722, status: "online" },
   { id: "m2", full_name: "محمد الصقر", bike_type: "Kawasaki Z900", speed: 95, current_speed: 95, lat: 24.695, lng: 46.730, status: "online" },
   { id: "m3", full_name: "خالد البرق", bike_type: "Honda CBR", speed: 0, current_speed: 0, lat: 24.680, lng: 46.715, status: "offline" },
 ];
- 
+
 /* ─── Leaflet marker icon ─── */
 const createRiderIcon = (name, speed, isOnline) => {
   const glowColor = isOnline ? "#f97316" : "#6b7280";
@@ -58,7 +58,7 @@ const createRiderIcon = (name, speed, isOnline) => {
     className: "",
   });
 };
- 
+
 /* ─── GPS Hook ─── */
 function useGPS(profileId, stealth) {
   const [loc, setLoc] = useState(null);
@@ -68,7 +68,7 @@ function useGPS(profileId, stealth) {
   const watchRef = useRef(null);
   const intervalRef = useRef(null);
   const lastRef = useRef(null);
- 
+
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
     await supabase.from("locations").upsert(
@@ -76,7 +76,7 @@ function useGPS(profileId, stealth) {
       { onConflict: "profile_id" }
     );
   }, [profileId, stealth]);
- 
+
   const start = useCallback(() => {
     if (!navigator.geolocation) { setError("GPS غير مدعوم"); setStatus("error"); return; }
     setStatus("searching");
@@ -97,41 +97,41 @@ function useGPS(profileId, stealth) {
       if (lastRef.current) upload(lastRef.current.lat, lastRef.current.lng, lastRef.current.speed / 3.6);
     }, 5000);
   }, [upload]);
- 
-const stop = useCallback(async () => {
-  if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
-  if (intervalRef.current) clearInterval(intervalRef.current);
-  setStatus("idle");
-  // احذف الموقع نهائياً عند الإيقاف
-  if (profileId) {
-    await supabase.from("locations")
-      .delete()
-      .eq("profile_id", profileId);
-  }
-}, [profileId]);
- 
+
+  const stop = useCallback(async () => {
+    if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setStatus("idle");
+    // احذف الموقع نهائياً عند الإيقاف
+    if (profileId) {
+      await supabase.from("locations")
+        .delete()
+        .eq("profile_id", profileId);
+    }
+  }, [profileId]);
+
   useEffect(() => () => {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
   }, []);
 
   useEffect(() => {
-  const handleUnload = async () => {
-    if (profileId) {
-      await supabase.from("locations").delete().eq("profile_id", profileId);
-    }
-  };
-  window.addEventListener("beforeunload", handleUnload);
-  window.addEventListener("pagehide", handleUnload);
-  return () => {
-    window.removeEventListener("beforeunload", handleUnload);
-    window.removeEventListener("pagehide", handleUnload);
-  };
-}, [profileId]);
- 
+    const handleUnload = async () => {
+      if (profileId) {
+        await supabase.from("locations").delete().eq("profile_id", profileId);
+      }
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    window.addEventListener("pagehide", handleUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      window.removeEventListener("pagehide", handleUnload);
+    };
+  }, [profileId]);
+
   return { loc, speed, status, error, start, stop };
 }
- 
+
 /* ════════════════════════════════════════
    MAIN APP
 ════════════════════════════════════════ */
@@ -142,7 +142,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState("login");
   const [activeTab, setActiveTab] = useState("map");
   const isAdmin = window.location.pathname === "/admin";
- 
+
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 5000);
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -158,24 +158,24 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
- 
+
   const fetchProfile = async (uid) => {
     try {
       const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
       setProfile(data);
     } finally { setLoading(false); }
   };
- 
+
   const signOut = async () => { await supabase.auth.signOut(); setSession(null); setProfile(null); };
- 
+
   if (loading) return <Splash />;
   if (isAdmin) return <AdminPanel session={session} onSignOut={signOut} />;
   if (!session) return <AuthScreen mode={authMode} setMode={setAuthMode} />;
   if (!profile || profile.status === "pending") return <PendingScreen profile={profile} onSignOut={signOut} />;
- 
+
   return <MainApp session={session} profile={profile} activeTab={activeTab} setActiveTab={setActiveTab} onSignOut={signOut} />;
 }
- 
+
 /* ─── Splash ─── */
 function Splash() {
   return (
@@ -189,7 +189,7 @@ function Splash() {
     </div>
   );
 }
- 
+
 /* ─── Auth Screen ─── */
 function AuthScreen({ mode, setMode }) {
   const [email, setEmail] = useState("");
@@ -201,7 +201,7 @@ function AuthScreen({ mode, setMode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
- 
+
   const submit = async () => {
     setError(""); setSuccess(""); setLoading(true);
     try {
@@ -223,7 +223,7 @@ function AuthScreen({ mode, setMode }) {
       }
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
- 
+
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-radial from-orange-900/20 via-transparent to-transparent pointer-events-none" />
@@ -233,7 +233,7 @@ function AuthScreen({ mode, setMode }) {
           <h1 className="text-3xl font-black text-white tracking-widest">MOTO<span className="text-orange-500">RIDERS</span></h1>
           <p className="text-gray-500 text-sm mt-1">نظام تتبع الدراجين</p>
         </div>
- 
+
         <div className="flex bg-gray-900 rounded-2xl p-1 mb-5 border border-gray-800">
           {["login", "register"].map(m => (
             <button key={m} onClick={() => { setMode(m); setError(""); }}
@@ -242,7 +242,7 @@ function AuthScreen({ mode, setMode }) {
             </button>
           ))}
         </div>
- 
+
         <div className="space-y-3">
           <AnimatePresence>
             {mode === "register" && (
@@ -258,12 +258,12 @@ function AuthScreen({ mode, setMode }) {
             <Field icon={<Lock size={15} />} placeholder="كلمة المرور" type={showPass ? "text" : "password"} value={pass} onChange={setPass} />
             <button onClick={() => setShowPass(!showPass)} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">{showPass ? <EyeOff size={15} /> : <Eye size={15} />}</button>
           </div>
- 
+
           <AnimatePresence>
             {error && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 bg-red-900/40 border border-red-700 text-red-400 text-sm p-3 rounded-xl"><XCircle size={15} />{error}</motion.div>}
             {success && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 bg-green-900/40 border border-green-700 text-green-400 text-sm p-3 rounded-xl"><CheckCircle size={15} />{success}</motion.div>}
           </AnimatePresence>
- 
+
           <motion.button whileTap={{ scale: 0.97 }} onClick={submit} disabled={loading}
             className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-orange-500/40 disabled:opacity-60 text-base">
             {loading ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={20} /></motion.div>
@@ -274,7 +274,7 @@ function AuthScreen({ mode, setMode }) {
     </div>
   );
 }
- 
+
 function Field({ icon, placeholder, type = "text", value, onChange, hint }) {
   return (
     <div>
@@ -289,7 +289,7 @@ function Field({ icon, placeholder, type = "text", value, onChange, hint }) {
     </div>
   );
 }
- 
+
 /* ─── Pending Screen ─── */
 function PendingScreen({ profile, onSignOut }) {
   return (
@@ -321,7 +321,7 @@ function PendingScreen({ profile, onSignOut }) {
               className={`flex items-center gap-3 p-3 rounded-xl text-right ${s.a ? "bg-orange-500/10 border border-orange-500/30" : "bg-gray-900/50"}`}>
               {s.d ? <CheckCircle size={18} className="text-green-500 shrink-0" />
                 : s.a ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}><Loader size={18} className="text-orange-500 shrink-0" /></motion.div>
-                : <div className="w-4 h-4 rounded-full border-2 border-gray-700 shrink-0" />}
+                  : <div className="w-4 h-4 rounded-full border-2 border-gray-700 shrink-0" />}
               <span className={`text-sm ${s.d ? "text-green-400" : s.a ? "text-orange-400 font-semibold" : "text-gray-600"}`}>{s.l}</span>
             </motion.div>
           ))}
@@ -333,35 +333,36 @@ function PendingScreen({ profile, onSignOut }) {
     </div>
   );
 }
- 
+
 /* ─── Main App ─── */
 function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [riders, setRiders] = useState([]);
   const [connected, setConnected] = useState(false);
   const [tracking, setTracking] = useState(false);
   const [stealth, setStealth] = useState(false);
+  const [unread, setUnread] = useState(0);
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
- 
+
   useEffect(() => {
-const load = async () => {
-  const { data, error } = await supabase
-    .from("approved_riders_with_location")
-    .select("*")
-    .neq("id", profile.id);
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("approved_riders_with_location")
+        .select("*")
+        .neq("id", profile.id);
 
-  console.log("Riders data:", data, "Error:", error);
+      console.log("Riders data:", data, "Error:", error);
 
-  if (data && data.length > 0) {
-    setRiders(data.map(r => ({
-      ...r,
-      current_speed: r.current_speed || 0,
-      status: r.lat ? "online" : "offline",
-    })));
-  }
-};
+      if (data && data.length > 0) {
+        setRiders(data.map(r => ({
+          ...r,
+          current_speed: r.current_speed || 0,
+          status: r.lat ? "online" : "offline",
+        })));
+      }
+    };
     load();
   }, [profile.id]);
- 
+
   useEffect(() => {
     const ch = supabase.channel("rt-locations")
       .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, ({ new: n }) => {
@@ -371,12 +372,32 @@ const load = async () => {
       .subscribe(s => setConnected(s === "SUBSCRIBED"));
     return () => supabase.removeChannel(ch);
   }, []);
- 
+
+  // بعد channel locations أضف هذا
+  useEffect(() => {
+    const ch = supabase.channel("chat-notify")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          // إذا مش في تاب الدردشة — زد العداد
+          if (activeTab !== "chat" && payload.new.sender_id !== profile.id) {
+            setUnread(prev => prev + 1);
+          }
+        }
+      ).subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [activeTab, profile.id]);
+
+  // عند فتح الدردشة — صفّر العداد
+  useEffect(() => {
+    if (activeTab === "chat") setUnread(0);
+  }, [activeTab]);
+
   const toggleGPS = () => {
     if (tracking) { stop(); setTracking(false); }
     else { start(); setTracking(true); }
   };
- 
+
   const tabs = [
     { id: "map", icon: Map, label: "الخريطة" },
     { id: "riders", icon: Users, label: "سائقون" },
@@ -384,7 +405,7 @@ const load = async () => {
     { id: "groups", icon: Shield, label: "مجموعات" },
     { id: "profile", icon: User, label: "بروفايل" },
   ];
- 
+
   return (
     <div className="h-[100dvh] bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
@@ -396,17 +417,16 @@ const load = async () => {
           <span className="text-xs text-gray-500">{connected ? "مباشر" : "غير متصل"}</span>
         </div>
         <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
-        <div className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold ${
-          gpsStatus === "active" ? "bg-green-500/20 text-green-400" :
-          gpsStatus === "searching" ? "bg-yellow-500/20 text-yellow-400" :
-          gpsStatus === "error" ? "bg-red-500/20 text-red-400" : "bg-gray-800 text-gray-500"}`}>
+        <div className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold ${gpsStatus === "active" ? "bg-green-500/20 text-green-400" :
+            gpsStatus === "searching" ? "bg-yellow-500/20 text-yellow-400" :
+              gpsStatus === "error" ? "bg-red-500/20 text-red-400" : "bg-gray-800 text-gray-500"}`}>
           {gpsStatus === "searching" && <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={10} /></motion.div>}
           {gpsStatus === "active" && <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}><div className="w-1.5 h-1.5 bg-green-400 rounded-full" /></motion.div>}
           <Navigation size={11} />
           <span>{gpsStatus === "active" ? `${speed}` : gpsStatus === "searching" ? "..." : gpsStatus === "error" ? "!" : "GPS"}</span>
         </div>
       </div>
- 
+
       {/* GPS Error */}
       <AnimatePresence>
         {gpsError && (
@@ -416,7 +436,7 @@ const load = async () => {
           </motion.div>
         )}
       </AnimatePresence>
- 
+
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
@@ -427,7 +447,7 @@ const load = async () => {
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
- 
+
       {/* Bottom Nav */}
       <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0 safe-bottom">
         <div className="flex items-center justify-around px-2 pt-2 pb-3 max-w-lg mx-auto">
@@ -438,7 +458,15 @@ const load = async () => {
               <motion.button key={tab.id} whileTap={{ scale: 0.82 }} onClick={() => setActiveTab(tab.id)}
                 className="flex flex-col items-center gap-1 py-1.5 px-3 relative min-w-[56px]">
                 {active && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-orange-500/15 rounded-2xl" transition={{ type: "spring", bounce: 0.35 }} />}
-                <Icon size={22} className={`relative z-10 transition-colors ${active ? "text-orange-500" : "text-gray-600"}`} />
+                <div className="relative">
+                  <Icon size={22} className={`relative z-10 transition-colors ${active ? "text-orange-500" : "text-gray-600"}`} />
+                  {tab.id === "chat" && unread > 0 && (
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center z-20">
+                      <span className="text-white text-[9px] font-black">{unread > 9 ? "9+" : unread}</span>
+                    </motion.div>
+                  )}
+                </div>
                 <span className={`text-[10px] relative z-10 font-medium ${active ? "text-orange-500" : "text-gray-600"}`}>{tab.label}</span>
               </motion.button>
             );
@@ -448,19 +476,19 @@ const load = async () => {
     </div>
   );
 }
- 
+
 /* ─── Map Tab ─── */
 function MapCentre({ loc }) {
   const map = useMap();
   useEffect(() => { if (loc) map.setView([loc.lat, loc.lng], map.getZoom()); }, [loc, map]);
   return null;
 }
- 
+
 function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS }) {
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
- 
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
       {/* My card */}
@@ -470,7 +498,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           <p className="text-orange-500 font-black text-base">{speed} كم/س</p>
         </div>
       </div>
- 
+
       {/* Online + stealth */}
       <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-2">
         <div className="bg-gray-950/95 backdrop-blur border border-green-500/40 rounded-2xl px-3 py-2 flex items-center gap-2">
@@ -484,7 +512,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           {stealth ? <EyeOff size={13} /> : <Eye size={13} />}{stealth ? "مخفي" : "الخفاء"}
         </motion.button>
       </div>
- 
+
       {/* GPS + zoom */}
       <div className="absolute right-3 top-1/2 -translate-y-1/2 z-[1000] flex flex-col gap-2">
         <motion.button whileTap={{ scale: 0.9 }} onClick={toggleGPS}
@@ -494,7 +522,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
             : <Navigation size={17} className={tracking ? "text-white" : "text-gray-500"} />}
         </motion.button>
       </div>
- 
+
       {/* Selected rider */}
       <AnimatePresence>
         {selected && (
@@ -514,7 +542,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           </motion.div>
         )}
       </AnimatePresence>
- 
+
       {/* SOS */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1">
         <motion.button whileTap={{ scale: 0.88 }} onClick={() => { setSos(true); setTimeout(() => setSos(false), 5000); }}
@@ -525,13 +553,13 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         </motion.button>
         {sos && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-xs font-bold">جاري الإرسال...</motion.p>}
       </div>
- 
+
       <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#111" }} zoomControl={false}>
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-         attribution="iims.13"
-        maxZoom={19}
-/>
+          attribution="iims.13"
+          maxZoom={19}
+        />
         {loc && !stealth && <Marker position={[loc.lat, loc.lng]} icon={createRiderIcon(profile?.full_name || "أنت", speed, true)} />}
         {riders.filter(r => r.lat && r.lng).map(r => (
           <Marker key={r.id} position={[r.lat, r.lng]} icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online")}
@@ -542,7 +570,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     </motion.div>
   );
 }
- 
+
 /* ─── Riders Tab ─── */
 function RidersTab({ riders }) {
   return (
@@ -574,14 +602,14 @@ function RidersTab({ riders }) {
     </motion.div>
   );
 }
- 
+
 /* ─── Chat Tab ─── */
 const MOCK_MSGS = [
   { id: 1, sender: "أحمد", text: "الطريق واضح 🟢", time: "14:32", mine: false },
   { id: 2, sender: "محمد", text: "كاميرا على الحلقة! ⚠️", time: "14:35", mine: false },
   { id: 3, sender: "أنت", text: "شكراً 👍", time: "14:36", mine: true },
 ];
- 
+
 function ChatTab({ profile }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -686,13 +714,13 @@ function ChatTab({ profile }) {
     </motion.div>
   );
 }
- 
+
 /* ─── Groups Tab ─── */
 const MOCK_GROUPS = [
   { id: 1, name: "فريق الصقور", members: 8, ride: "جدة → مكة", icon: "🦅" },
   { id: 2, name: "دراجي الليل", members: 5, ride: "الرياض ring road", icon: "🌙" },
 ];
- 
+
 function GroupsTab() {
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
@@ -720,7 +748,7 @@ function GroupsTab() {
     </motion.div>
   );
 }
- 
+
 /* ─── Profile Tab ─── */
 function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut }) {
   const stats = [
@@ -747,7 +775,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
             </div>
           ))}
         </div>
- 
+
         {/* GPS Card */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
@@ -773,7 +801,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
             </motion.div>
           )}
         </div>
- 
+
         {/* Settings */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
           {[{ icon: <Settings size={16} />, label: "إعدادات الحساب" }, { icon: <Bell size={16} />, label: "الإشعارات" }, { icon: <Star size={16} />, label: "الرحلات المفضلة" }].map((item, i, arr) => (
@@ -785,7 +813,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
             </motion.button>
           ))}
         </div>
- 
+
         <motion.button whileTap={{ scale: 0.97 }} onClick={onSignOut}
           className="w-full bg-red-900/30 border border-red-800 text-red-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2">
           <LogOut size={16} />تسجيل الخروج
@@ -794,7 +822,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
     </motion.div>
   );
 }
- 
+
 /* ════════════════════════════════════════
    ADMIN PANEL — مدمج في نفس الملف
 ════════════════════════════════════════ */
@@ -807,7 +835,7 @@ function AdminPanel({ session, onSignOut }) {
   const [toast, setToast] = useState(null);
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, banned: 0 });
   const [adminProfile, setAdminProfile] = useState(null);
- 
+
   useEffect(() => {
     if (session) {
       supabase.from("profiles").select("*").eq("id", session.user.id).single()
@@ -815,7 +843,7 @@ function AdminPanel({ session, onSignOut }) {
       fetchAll();
     } else setLoading(false);
   }, [session]);
- 
+
   const fetchAll = async () => {
     setLoading(true);
     const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
@@ -825,7 +853,7 @@ function AdminPanel({ session, onSignOut }) {
     }
     setLoading(false);
   };
- 
+
   const updateStatus = async (id, newStatus, name) => {
     setActionId(id);
     const oldStatus = profiles.find(p => p.id === id)?.status;
@@ -835,12 +863,12 @@ function AdminPanel({ session, onSignOut }) {
     showToast(newStatus === "approved" ? `✅ تمت الموافقة على ${name}` : newStatus === "banned" ? `🚫 تم حظر ${name}` : `⏳ تم إرجاع ${name}`, newStatus === "approved" ? "success" : newStatus === "banned" ? "error" : "info");
     setActionId(null);
   };
- 
+
   const showToast = (msg, type) => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
- 
+
   const isAdmin = adminProfile?.role === "admin" || adminProfile?.role === "moderator";
   const filtered = profiles.filter(p => (filter === "all" || p.status === filter) && (p.full_name?.toLowerCase().includes(search.toLowerCase()) || p.bike_type?.toLowerCase().includes(search.toLowerCase())));
- 
+
   if (!session) return (
     <div className="h-[100dvh] bg-gray-950 flex items-center justify-center p-4">
       <div className="text-center">
@@ -851,7 +879,7 @@ function AdminPanel({ session, onSignOut }) {
       </div>
     </div>
   );
- 
+
   if (!isAdmin && adminProfile) return (
     <div className="h-[100dvh] bg-gray-950 flex items-center justify-center p-4">
       <div className="text-center">
@@ -862,7 +890,7 @@ function AdminPanel({ session, onSignOut }) {
       </div>
     </div>
   );
- 
+
   return (
     <div className="h-[100dvh] bg-gray-950 text-white flex flex-col overflow-hidden" dir="rtl">
       <AnimatePresence>
@@ -873,7 +901,7 @@ function AdminPanel({ session, onSignOut }) {
           </motion.div>
         )}
       </AnimatePresence>
- 
+
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0 safe-top">
         <div className="flex items-center gap-3">
@@ -888,7 +916,7 @@ function AdminPanel({ session, onSignOut }) {
           <div className="w-9 h-9 bg-orange-500/20 border border-orange-500/40 rounded-xl flex items-center justify-center"><Crown size={18} className="text-orange-500" /></div>
         </div>
       </div>
- 
+
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="p-4 space-y-4 max-w-2xl mx-auto">
           {/* Stats */}
@@ -910,14 +938,14 @@ function AdminPanel({ session, onSignOut }) {
               );
             })}
           </div>
- 
+
           {/* Search */}
           <div className="relative">
             <Search size={15} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث..."
               className="w-full bg-gray-900 border border-gray-800 text-white placeholder-gray-600 rounded-2xl py-3 pr-11 pl-4 text-sm focus:border-orange-500 focus:outline-none" />
           </div>
- 
+
           {/* List */}
           {loading ? (
             <div className="text-center py-16">
