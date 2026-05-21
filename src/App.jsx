@@ -832,7 +832,14 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
             </motion.button>
           ))}
         </div>
-
+        {profile?.role === "admin" && (
+          <motion.button whileTap={{ scale: 0.97 }}
+            onClick={() => window.location.href = "/admin"}
+            className="w-full bg-orange-500/20 border border-orange-500/40 text-orange-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-orange-500/30 transition-all">
+            <Crown size={16} />
+            لوحة الأدمن 👑
+          </motion.button>
+        )}
         <motion.button whileTap={{ scale: 0.97 }} onClick={onSignOut}
           className="w-full bg-red-900/30 border border-red-800 text-red-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2">
           <LogOut size={16} />تسجيل الخروج
