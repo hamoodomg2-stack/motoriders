@@ -960,7 +960,11 @@ function AdminPanel({ session, onSignOut }) {
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${codesTab ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
             🎟️ الكودات
           </button>
-          <button onClick={onSignOut} className="text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"><LogOut size={14} />خروج</button>
+          <button onClick={() => window.location.href = "/"}
+            className="text-gray-400 hover:text-orange-400 transition-colors flex items-center gap-1 text-xs">
+            <ArrowRight size={14} className="rotate-180" />
+            رجوع للتطبيق
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <div className="text-right">
