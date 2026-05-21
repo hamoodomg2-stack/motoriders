@@ -209,16 +209,15 @@ function AuthScreen({ mode, setMode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) throw new Error("البريد أو كلمة المرور غير صحيحة");
       } else {
-        const { data: codeData } = await supabase
+        const { data: codeData, error: codeError } = await supabase
           .from("invite_codes")
           .select("*")
           .eq("code", code.toUpperCase())
           .eq("is_used", false)
           .gt("expires_at", new Date().toISOString())
-          .single();
+          .maybeSingle();
 
-        if (!codeData) throw new Error("كود الدعوة غير صحيح أو منتهي الصلاحية!");
-
+        if (codeError || !codeData) throw new Error("كود الدعوة غير صحيح أو منتهي الصلاحية!");
         // ضع الكود كـ مستخدم
         await supabase.from("invite_codes")
           .update({ is_used: true, used_by: data.user.id })
@@ -989,44 +988,44 @@ function AdminPanel({ session, onSignOut }) {
           </div>
 
           {/* Codes Section */}
-{codesTab && (
-  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
-    <div className="flex items-center justify-between">
-      <motion.button whileTap={{ scale: 0.95 }} onClick={generateCode} disabled={generating}
-        className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl flex items-center gap-2 disabled:opacity-60 shadow-lg shadow-orange-500/30">
-        {generating
-          ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div>
-          : "+"} توليد كود
-      </motion.button>
-      <p className="text-white font-bold text-right">كودات الدعوة</p>
-    </div>
-    {codes.length === 0 ? (
-      <p className="text-gray-600 text-sm text-center py-4">لا توجد كودات بعد</p>
-    ) : (
-      <div className="space-y-2">
-        {codes.map(c => (
-          <div key={c.id} className="flex items-center gap-3 bg-gray-800 rounded-xl p-3">
-            <motion.button whileTap={{ scale: 0.9 }} onClick={() => deleteCode(c.id)}
-              className="w-8 h-8 bg-red-500/20 border border-red-500/40 rounded-lg flex items-center justify-center shrink-0">
-              <XCircle size={14} className="text-red-400" />
-            </motion.button>
-            <div className="flex-1 text-right">
-              <p className={`font-black text-sm tracking-widest ${c.is_used ? "text-gray-600 line-through" : "text-orange-400"}`}>
-                {c.code}
-              </p>
-              <p className="text-gray-600 text-xs">
-                {c.is_used ? "مستخدم ✓" : `ينتهي ${new Date(c.expires_at).toLocaleDateString("ar")}`}
-              </p>
+          {codesTab && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <motion.button whileTap={{ scale: 0.95 }} onClick={generateCode} disabled={generating}
+                  className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl flex items-center gap-2 disabled:opacity-60 shadow-lg shadow-orange-500/30">
+                  {generating
+                    ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div>
+                    : "+"} توليد كود
+                </motion.button>
+                <p className="text-white font-bold text-right">كودات الدعوة</p>
+              </div>
+              {codes.length === 0 ? (
+                <p className="text-gray-600 text-sm text-center py-4">لا توجد كودات بعد</p>
+              ) : (
+                <div className="space-y-2">
+                  {codes.map(c => (
+                    <div key={c.id} className="flex items-center gap-3 bg-gray-800 rounded-xl p-3">
+                      <motion.button whileTap={{ scale: 0.9 }} onClick={() => deleteCode(c.id)}
+                        className="w-8 h-8 bg-red-500/20 border border-red-500/40 rounded-lg flex items-center justify-center shrink-0">
+                        <XCircle size={14} className="text-red-400" />
+                      </motion.button>
+                      <div className="flex-1 text-right">
+                        <p className={`font-black text-sm tracking-widest ${c.is_used ? "text-gray-600 line-through" : "text-orange-400"}`}>
+                          {c.code}
+                        </p>
+                        <p className="text-gray-600 text-xs">
+                          {c.is_used ? "مستخدم ✓" : `ينتهي ${new Date(c.expires_at).toLocaleDateString("ar")}`}
+                        </p>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full font-bold ${c.is_used ? "bg-gray-700 text-gray-500" : "bg-green-500/20 text-green-400 border border-green-500/30"}`}>
+                        {c.is_used ? "مستخدم" : "متاح"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <span className={`text-xs px-2 py-1 rounded-full font-bold ${c.is_used ? "bg-gray-700 text-gray-500" : "bg-green-500/20 text-green-400 border border-green-500/30"}`}>
-              {c.is_used ? "مستخدم" : "متاح"}
-            </span>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
+          )}
 
           {/* List */}
           {loading ? (
