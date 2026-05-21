@@ -583,42 +583,103 @@ const MOCK_MSGS = [
 ];
  
 function ChatTab({ profile }) {
-  const [msgs, setMsgs] = useState(MOCK_MSGS);
+  const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
- 
-  const send = () => {
+
+  // جلب الرسائل القديمة
+  useEffect(() => {
+    const fetchMsgs = async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .limit(50);
+      if (data) setMsgs(data);
+      setLoading(false);
+    };
+    fetchMsgs();
+
+    // Realtime — استقبال الرسائل فوراً
+    const channel = supabase
+      .channel("messages-realtime")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          setMsgs(prev => [...prev, payload.new]);
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs]);
+
+  const send = async () => {
     if (!input.trim()) return;
-    setMsgs(p => [...p, { id: Date.now(), sender: "أنت", text: input, time: new Date().toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" }), mine: true }]);
+    const text = input.trim();
     setInput("");
+
+    await supabase.from("messages").insert({
+      sender_id: profile.id,
+      sender_name: profile.full_name,
+      content: text,
+    });
   };
- 
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col">
       <div className="px-4 py-3 border-b border-gray-800 shrink-0">
         <p className="text-white font-bold text-sm text-right">دردشة المجموعة</p>
-        <p className="text-green-400 text-xs text-right">متصلون</p>
+        <p className="text-green-400 text-xs text-right">مباشر</p>
       </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-        {msgs.map(m => (
-          <div key={m.id} className={`flex gap-2 ${m.mine ? "flex-row-reverse" : "flex-row"}`}>
-            <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center text-sm shrink-0 self-end">🏍️</div>
-            <div className={`max-w-[75%] flex flex-col ${m.mine ? "items-end" : "items-start"}`}>
-              {!m.mine && <p className="text-orange-400 text-xs mb-1 font-semibold">{m.sender}</p>}
-              <div className={`px-4 py-2.5 rounded-2xl text-sm ${m.mine ? "bg-orange-500 text-white rounded-tr-sm" : "bg-gray-900 text-gray-200 border border-gray-800 rounded-tl-sm"}`}>{m.text}</div>
-              <p className="text-gray-600 text-[10px] mt-1">{m.time}</p>
-            </div>
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+              <Loader size={28} className="text-orange-500" />
+            </motion.div>
           </div>
-        ))}
+        ) : msgs.length === 0 ? (
+          <div className="flex items-center justify-center h-full flex-col gap-2">
+            <MessageCircle size={40} className="text-gray-700" />
+            <p className="text-gray-600 text-sm">لا توجد رسائل بعد</p>
+            <p className="text-gray-700 text-xs">كن أول من يكتب! 🏍️</p>
+          </div>
+        ) : (
+          msgs.map(m => {
+            const mine = m.sender_id === profile.id;
+            return (
+              <div key={m.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}>
+                <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center text-sm shrink-0 self-end">🏍️</div>
+                <div className={`max-w-[75%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                  {!mine && <p className="text-orange-400 text-xs mb-1 font-semibold">{m.sender_name}</p>}
+                  <div className={`px-4 py-2.5 rounded-2xl text-sm ${mine ? "bg-orange-500 text-white rounded-tr-sm" : "bg-gray-900 text-gray-200 border border-gray-800 rounded-tl-sm"}`}>
+                    {m.content}
+                  </div>
+                  <p className="text-gray-600 text-[10px] mt-1">
+                    {new Date(m.created_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+            );
+          })
+        )}
         <div ref={bottomRef} />
       </div>
+
       <div className="p-3 border-t border-gray-800 flex gap-2 shrink-0">
         <motion.button whileTap={{ scale: 0.9 }} onClick={send}
           className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/40">
           <ArrowRight size={18} className="text-white rotate-180" />
         </motion.button>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
+        <input value={input} onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && send()}
           placeholder="اكتب رسالة..." dir="rtl"
           className="flex-1 bg-gray-900 border border-gray-800 text-white placeholder-gray-600 rounded-2xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
       </div>
