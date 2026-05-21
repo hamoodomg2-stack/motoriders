@@ -223,7 +223,7 @@ function AuthScreen({ mode, setMode }) {
         await supabase.from("invite_codes")
           .update({ is_used: true, used_by: data.user.id })
           .eq("code", code.toUpperCase());
-          
+
         if (!name || !bike) throw new Error("يرجى تعبئة جميع الحقول");
         const { data, error } = await supabase.auth.signUp({ email, password: pass });
         if (error) throw new Error(error.message);
@@ -944,6 +944,10 @@ function AdminPanel({ session, onSignOut }) {
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0 safe-top">
         <div className="flex items-center gap-3">
           <button onClick={fetchAll} className="text-gray-400 hover:text-orange-400 transition-colors"><RefreshCw size={17} /></button>
+          <button onClick={() => setCodesTab(!codesTab)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${codesTab ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
+            🎟️ الكودات
+          </button>
           <button onClick={onSignOut} className="text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"><LogOut size={14} />خروج</button>
         </div>
         <div className="flex items-center gap-2">
