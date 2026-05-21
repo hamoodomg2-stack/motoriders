@@ -209,6 +209,8 @@ function AuthScreen({ mode, setMode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) throw new Error("البريد أو كلمة المرور غير صحيحة");
       } else {
+        if (!name || !bike) throw new Error("يرجى تعبئة جميع الحقول");
+
         const { data: codeData, error: codeError } = await supabase
           .from("invite_codes")
           .select("*")
@@ -218,21 +220,25 @@ function AuthScreen({ mode, setMode }) {
           .maybeSingle();
 
         if (codeError || !codeData) throw new Error("كود الدعوة غير صحيح أو منتهي الصلاحية!");
-        // ضع الكود كـ مستخدم
-        await supabase.from("invite_codes")
-          .update({ is_used: true, used_by: data.user.id })
-          .eq("code", code.toUpperCase());
 
-        if (!name || !bike) throw new Error("يرجى تعبئة جميع الحقول");
-        const { data, error } = await supabase.auth.signUp({ email, password: pass });
-        if (error) throw new Error(error.message);
-        if (data.user) {
+        const signUpResult = await supabase.auth.signUp({ email, password: pass });
+        if (signUpResult.error) throw new Error(signUpResult.error.message);
+
+        if (signUpResult.data.user) {
           await supabase.from("profiles").insert({
-            id: data.user.id, full_name: name, bike_type: bike,
-            status: "pending", role: "user", invite_code_used: code.toUpperCase(),
+            id: signUpResult.data.user.id,
+            full_name: name,
+            bike_type: bike,
+            status: "pending",
+            role: "user",
+            invite_code_used: code.toUpperCase(),
           });
+          await supabase.from("invite_codes")
+            .update({ is_used: true, used_by: signUpResult.data.user.id })
+            .eq("code", code.toUpperCase());
         }
-        setSuccess("تم التسجيل! حسابك قيد المراجعة."); setTimeout(() => setMode("login"), 3000);
+        setSuccess("تم التسجيل! حسابك قيد المراجعة.");
+        setTimeout(() => setMode("login"), 3000);
       }
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
