@@ -538,7 +538,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   return (
     <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0">
+      <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
         <div className="flex items-center gap-1.5">
           {connected
             ? <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, repeat: Infinity }}><Wifi size={13} className="text-green-500" /></motion.div>
