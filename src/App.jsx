@@ -1114,7 +1114,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
               const file = e.target.files?.[0];
               if (!file) return;
               const ext = file.name.split(".").pop();
-              const path = `${profile.id}/avatar.${ext}`;
+              const path = `${profile.id}/avatar_${Date.now()}.${ext}`;
               const { error: uploadError } = await supabase.storage
                 .from("avatars")
                 .upload(path, file, { upsert: true });
@@ -1125,6 +1125,18 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
               await supabase.from("profiles")
                 .update({ avatar_url: publicUrl })
                 .eq("id", profile.id);
+              // تحديث profile في قاعدة البيانات وإعادة جلبه
+              const { data: updatedProfile } = await supabase
+                .from("profiles")
+                .select("*")
+                .eq("id", profile.id)
+                .single();
+              if (updatedProfile) {
+                // تحديث الصورة في locations أيضاً
+                await supabase.from("locations")
+                  .update({ updated_at: new Date().toISOString() })
+                  .eq("profile_id", profile.id);
+              }
               window.location.reload();
             }} />
             <span className="text-white text-sm">📷</span>
