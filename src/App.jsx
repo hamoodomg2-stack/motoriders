@@ -536,7 +536,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   ];
 
   return (
-    <div className="bg-gray-950 overflow-hidden" style={{ height: "100dvh", height: "100vh" }}>
+    <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
