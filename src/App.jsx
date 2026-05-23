@@ -536,9 +536,9 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   ];
 
   return (
-    <div className="h-[100dvh] bg-gray-950 flex flex-col overflow-hidden">
+    <div className="bg-gray-950 overflow-hidden" style={{ height: "100dvh", height: "100vh" }}>
       {/* Header */}
-      <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0 safe-top">
+      <div className="fixed top-0 left-0 right-0 z-50 bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           {connected
             ? <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, repeat: Infinity }}><Wifi size={13} className="text-green-500" /></motion.div>
@@ -567,7 +567,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       </AnimatePresence>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden relative min-h-0">
+      <div className="fixed left-0 right-0 overflow-hidden" style={{ top: "56px", bottom: "65px" }}>
         <AnimatePresence mode="wait">
           {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} />}
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} />}
@@ -578,7 +578,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       </div>
 
       {/* Bottom Nav */}
-      <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-950/98 border-t border-gray-800/50" style={{ paddingBottom: "env(safe-area-inset-bottom, 8px)" }}>
         <div className="flex items-center justify-around px-2 pt-2 pb-3 max-w-lg mx-auto">
           {tabs.map(tab => {
             const Icon = tab.icon;

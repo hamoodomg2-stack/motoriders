@@ -1,26 +1,41 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
- 
-/* ─── Mobile PWA optimizations ─── */
+
 * {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
+  box-sizing: border-box;
 }
- 
-html, body, #root {
+
+html {
   height: 100%;
-  height: 100dvh;
+  height: -webkit-fill-available;
+}
+
+body {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  min-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
   background: #030712;
+  margin: 0;
 }
- 
-/* Safe area for notch/home indicator */
-.safe-top { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 8px); }
- 
-/* Leaflet dark popup */
+
+#root {
+  height: 100vh;
+  height: -webkit-fill-available;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; -webkit-font-smoothing: antialiased; }
+
+.leaflet-control-attribution { display: none !important; }
+.leaflet-container { background: #111 !important; }
+
 .leaflet-popup-content-wrapper {
   background: #111827 !important;
   border: 1px solid #374151 !important;
@@ -30,23 +45,3 @@ html, body, #root {
 }
 .leaflet-popup-tip { background: #111827 !important; }
 .leaflet-popup-content { margin: 0 !important; }
- 
-/* Leaflet tiles dark */
-.leaflet-container { background: #111 !important; }
- 
-/* Hide scrollbar */
-::-webkit-scrollbar { display: none; }
-* { scrollbar-width: none; }
- 
-/* Smooth transitions */
-* { -webkit-font-smoothing: antialiased; }
- 
-/* PWA manifest colors */
-:root {
-  --orange: #f97316;
-  --bg: #030712;
-}
-
-.leaflet-control-attribution {
-  display: none !important;
-}
