@@ -578,7 +578,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       </div>
 
       {/* Bottom Nav */}
-      <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0 safe-bottom">
+      <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex items-center justify-around px-2 pt-2 pb-3 max-w-lg mx-auto">
           {tabs.map(tab => {
             const Icon = tab.icon;
@@ -706,7 +706,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
             className="absolute bottom-24 left-3 right-3 z-[1000]">
             <div className="bg-gray-950/98 border border-red-500/40 rounded-2xl p-4 backdrop-blur shadow-xl">
               <p className="text-white font-bold text-sm text-right mb-3">⚠️ إضافة تحذير في موقعك</p>
-              
+
               {/* نوع التحذير */}
               <div className="grid grid-cols-4 gap-2 mb-3">
                 {ALERT_TYPES.map(t => (
@@ -793,12 +793,14 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {/* التحذيرات */}
         {alerts.filter(a => a.active).map(a => (
           <Marker key={a.id} position={[a.lat, a.lng]} icon={createAlertIcon(a.type)}
-            eventHandlers={{ click: () => {
-              const t = ALERT_TYPES.find(x => x.id === a.type);
-              if (window.confirm(`${t?.icon} ${t?.label}\nبواسطة: ${a.reporter_name}\n${a.description || ""}\n\nهل تريد حذف هذا التحذير؟`)) {
-                removeAlert(a.id);
+            eventHandlers={{
+              click: () => {
+                const t = ALERT_TYPES.find(x => x.id === a.type);
+                if (window.confirm(`${t?.icon} ${t?.label}\nبواسطة: ${a.reporter_name}\n${a.description || ""}\n\nهل تريد حذف هذا التحذير؟`)) {
+                  removeAlert(a.id);
+                }
               }
-            }}} />
+            }} />
         ))}
 
         {loc && <MapCentre loc={loc} />}
