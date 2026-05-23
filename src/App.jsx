@@ -72,7 +72,12 @@ function useGPS(profileId, stealth) {
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
     await supabase.from("locations").upsert(
-      { profile_id: profileId, lat, lng, speed: Math.round(spd * 3.6), updated_at: new Date().toISOString() },
+      {
+        profile_id: profileId,
+        lat, lng,
+        speed: Math.round(spd * 3.6),
+        updated_at: new Date().toISOString()
+      },
       { onConflict: "profile_id" }
     );
   }, [profileId, stealth]);
@@ -95,7 +100,7 @@ function useGPS(profileId, stealth) {
     );
     intervalRef.current = setInterval(() => {
       if (lastRef.current) upload(lastRef.current.lat, lastRef.current.lng, lastRef.current.speed / 3.6);
-    }, 5000);
+    }, 10000);
   }, [upload]);
 
   const stop = useCallback(async () => {
@@ -359,6 +364,17 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [connected, setConnected] = useState(false);
   const [tracking, setTracking] = useState(false);
   const [stealth, setStealth] = useState(false);
+  // فحص كل 30 ثانية — إزالة الدراجين غير النشطين
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+      setRiders(prev => prev.filter(r => {
+        if (!r.location_updated_at) return false;
+        return new Date(r.location_updated_at) > twoMinutesAgo;
+      }));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
   const [unread, setUnread] = useState(0);
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
 
