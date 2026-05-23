@@ -18,7 +18,7 @@ html, body, #root {
  
 /* Safe area for notch/home indicator */
 .safe-top { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 8px); }
  
 /* Leaflet dark popup */
 .leaflet-popup-content-wrapper {
