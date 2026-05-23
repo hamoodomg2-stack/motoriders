@@ -45,7 +45,7 @@ const MOCK_RIDERS = [
 ];
 
 /* ─── Leaflet marker icon ─── */
-const createRiderIcon = (name, speed, isOnline) => {
+const createRiderIcon = (name, speed, isOnline, avatarUrl) => {
   const glowColor = isOnline ? "#f97316" : "#6b7280";
   const ringColor = isOnline ? "#f97316" : "#4b5563";
   return L.divIcon({
@@ -55,12 +55,15 @@ const createRiderIcon = (name, speed, isOnline) => {
           background:${isOnline ? "conic-gradient(#f97316,#fb923c,#f97316)" : "conic-gradient(#4b5563,#6b7280,#4b5563)"};
           padding:3px;box-shadow:0 0 ${isOnline ? "16px 3px" : "0px"} ${glowColor}88;">
           <div style="width:100%;height:100%;border-radius:50%;background:#111;
-            display:flex;align-items:center;justify-content:center;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24"
-              fill="none" stroke="${glowColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-              <circle cx="12" cy="7" r="4"/>
-            </svg>
+            display:flex;align-items:center;justify-content:center;overflow:hidden;">
+            ${avatarUrl
+        ? `<img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24"
+                  fill="none" stroke="${glowColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>`
+      }
           </div>
           ${isOnline ? `<div style="position:absolute;bottom:1px;right:1px;width:11px;height:11px;
             background:#22c55e;border-radius:50%;border:2px solid #111;"></div>` : ""}
