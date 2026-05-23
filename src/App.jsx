@@ -615,38 +615,51 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       </AnimatePresence>
 
       {/* Notifications Panel */}
+      {/* Notifications Panel */}
       <AnimatePresence>
         {showNotifications && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="absolute top-14 left-3 right-3 z-[999] bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-              <button onClick={async () => {
-                await supabase.from("notifications").update({ is_read: true }).eq("user_id", profile.id);
-                setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-                setUnreadNotif(0);
-              }} className="text-orange-400 text-xs">قراءة الكل</button>
-              <p className="text-white font-bold text-sm">الإشعارات 🔔</p>
-            </div>
-            <div className="max-h-72 overflow-y-auto">
-              {notifications.length === 0 ? (
-                <div className="text-center py-8 text-gray-600">
-                  <Bell size={28} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">لا توجد إشعارات</p>
+          <>
+            {/* خلفية شفافة للإغلاق */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[998]"
+              onClick={() => setShowNotifications(false)} />
+
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+              className="absolute left-3 right-3 z-[999] bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden"
+              style={{ top: "60px" }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+                <div className="flex items-center gap-2">
+                  <button onClick={async () => {
+                    await supabase.from("notifications").update({ is_read: true }).eq("user_id", profile.id);
+                    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                    setUnreadNotif(0);
+                  }} className="text-orange-400 text-xs">قراءة الكل</button>
+                  <button onClick={() => setShowNotifications(false)}
+                    className="w-6 h-6 bg-gray-800 rounded-full flex items-center justify-center text-gray-400 hover:text-white text-xs">✕</button>
                 </div>
-              ) : notifications.map(n => (
-                <div key={n.id} className={`px-4 py-3 border-b border-gray-800/50 text-right ${!n.is_read ? "bg-orange-500/5" : ""}`}>
-                  <div className="flex items-start justify-end gap-2">
-                    {!n.is_read && <div className="w-2 h-2 bg-orange-500 rounded-full mt-1.5 shrink-0" />}
-                    <div>
-                      <p className="text-white text-sm font-semibold">{n.title}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{n.body}</p>
-                      <p className="text-gray-600 text-[10px] mt-1">{new Date(n.created_at).toLocaleDateString("ar")}</p>
+                <p className="text-white font-bold text-sm">🔔 الإشعارات</p>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="text-center py-8 text-gray-600">
+                    <Bell size={28} className="mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">لا توجد إشعارات</p>
+                  </div>
+                ) : notifications.map(n => (
+                  <div key={n.id} className={`px-4 py-3 border-b border-gray-800/50 text-right ${!n.is_read ? "bg-orange-500/5" : ""}`}>
+                    <div className="flex items-start justify-end gap-2">
+                      {!n.is_read && <div className="w-2 h-2 bg-orange-500 rounded-full mt-1.5 shrink-0" />}
+                      <div>
+                        <p className="text-white text-sm font-semibold">{n.title}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{n.body}</p>
+                        <p className="text-gray-600 text-[10px] mt-1">{new Date(n.created_at).toLocaleDateString("ar")}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 
