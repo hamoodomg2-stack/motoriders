@@ -1101,7 +1101,35 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 overflow-y-auto">
       <div className="relative bg-gradient-to-b from-orange-600/25 to-gray-950 pt-8 pb-6 px-4 text-center">
-        <div className="w-20 h-20 bg-gray-800 border-4 border-orange-500 rounded-3xl flex items-center justify-center text-4xl mx-auto mb-3 shadow-xl shadow-orange-500/30">🏍️</div>
+        <div className="relative inline-block mx-auto mb-3">
+          <div className="w-20 h-20 bg-gray-800 border-4 border-orange-500 rounded-3xl overflow-hidden shadow-xl shadow-orange-500/30">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-4xl">🏍️</div>
+            )}
+          </div>
+          <label className="absolute -bottom-2 -right-2 w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center cursor-pointer shadow-lg hover:bg-orange-400 transition-all">
+            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const ext = file.name.split(".").pop();
+              const path = `${profile.id}/avatar.${ext}`;
+              const { error: uploadError } = await supabase.storage
+                .from("avatars")
+                .upload(path, file, { upsert: true });
+              if (uploadError) { alert("خطأ في الرفع"); return; }
+              const { data: { publicUrl } } = supabase.storage
+                .from("avatars")
+                .getPublicUrl(path);
+              await supabase.from("profiles")
+                .update({ avatar_url: publicUrl })
+                .eq("id", profile.id);
+              window.location.reload();
+            }} />
+            <span className="text-white text-sm">📷</span>
+          </label>
+        </div>
         <h2 className="text-white font-black text-xl">{profile?.full_name}</h2>
         <p className="text-orange-400 text-sm">{profile?.bike_type}</p>
         <span className="mt-2 inline-block bg-green-500/20 text-green-400 text-xs px-3 py-1 rounded-full border border-green-500/30">✓ حساب موثق</span>
