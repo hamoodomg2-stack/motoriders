@@ -18,6 +18,26 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const VALID_INVITE_CODES = ["MOTO2024", "RIDER001", "SPEED99", "BIKER42"];
 
+/* ─── أنواع التحذيرات ─── */
+const ALERT_TYPES = [
+  { id: "pothole", label: "حفرة خطيرة", icon: "🕳️" },
+  { id: "dogs", label: "كلاب ضالة", icon: "🐕" },
+  { id: "glass", label: "زجاج مكسور", icon: "💎" },
+  { id: "maintenance", label: "أعمال صيانة", icon: "🚧" },
+  { id: "rough_road", label: "طريق غير ممهد", icon: "🪨" },
+  { id: "accident", label: "حادث", icon: "🚨" },
+  { id: "other", label: "أخرى", icon: "⚠️" },
+];
+
+/* ─── حساب المسافة بين نقطتين (متر) ─── */
+function getDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 const MOCK_RIDERS = [
   { id: "m1", full_name: "أحمد السريع", bike_type: "Yamaha R1", speed: 120, current_speed: 120, lat: 24.688, lng: 46.722, status: "online" },
   { id: "m2", full_name: "محمد الصقر", bike_type: "Kawasaki Z900", speed: 95, current_speed: 95, lat: 24.695, lng: 46.730, status: "online" },
@@ -58,6 +78,80 @@ const createRiderIcon = (name, speed, isOnline) => {
     className: "",
   });
 };
+
+/* ─── Safety Alerts Hook ─── */
+function useSafetyAlerts(myLoc, profile) {
+  const [alerts, setAlerts] = useState([]);
+  const [showAddAlert, setShowAddAlert] = useState(false);
+  const notifiedRef = useRef(new Set());
+
+  // جلب التحذيرات النشطة
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      const { data } = await supabase
+        .from("safety_alerts")
+        .select("*")
+        .eq("active", true)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false });
+      if (data) setAlerts(data);
+    };
+    fetchAlerts();
+
+    // Realtime
+    const ch = supabase.channel("safety-alerts-rt")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "safety_alerts" },
+        () => fetchAlerts()
+      ).subscribe();
+    return () => supabase.removeChannel(ch);
+  }, []);
+
+  // تنبيه القرب — إذا اقتربت من تحذير بأقل من 200 متر
+  useEffect(() => {
+    if (!myLoc || !alerts.length) return;
+    alerts.forEach(alert => {
+      if (!alert.active) return;
+      const dist = getDistance(myLoc.lat, myLoc.lng, alert.lat, alert.lng);
+      if (dist < 200 && !notifiedRef.current.has(alert.id)) {
+        notifiedRef.current.add(alert.id);
+        // تنبيه صوتي
+        const type = ALERT_TYPES.find(t => t.id === alert.type);
+        const msg = new SpeechSynthesisUtterance(
+          `انتبه! بعد ${Math.round(dist)} متر ${type?.label || "تحذير"}`
+        );
+        msg.lang = "ar-SA";
+        msg.rate = 0.9;
+        window.speechSynthesis?.speak(msg);
+        // إشعار مرئي
+        if (Notification.permission === "granted") {
+          new Notification(`⚠️ ${type?.icon} ${type?.label}`, {
+            body: `بعد ${Math.round(dist)} متر — ${alert.description || ""}`,
+          });
+        }
+      }
+      // إعادة التنبيه إذا ابتعد ثم اقترب
+      if (dist > 500) notifiedRef.current.delete(alert.id);
+    });
+  }, [myLoc, alerts]);
+
+  const addAlert = async (type, description, lat, lng, reporterName) => {
+    const { data } = await supabase.from("safety_alerts").insert({
+      reporter_id: profile.id,
+      reporter_name: reporterName,
+      type, description, lat, lng,
+      expires_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    }).select().single();
+    if (data) setAlerts(prev => [data, ...prev]);
+  };
+
+  const removeAlert = async (id) => {
+    await supabase.from("safety_alerts").update({ active: false }).eq("id", id);
+    setAlerts(prev => prev.filter(a => a.id !== id));
+  };
+
+  return { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert };
+}
 
 /* ─── GPS Hook ─── */
 function useGPS(profileId, stealth) {
@@ -523,9 +617,42 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
+  const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
+  const [alertType, setAlertType] = useState("pothole");
+  const [alertDesc, setAlertDesc] = useState("");
+  const [addingAlert, setAddingAlert] = useState(false);
+
+  const handleAddAlert = async () => {
+    if (!loc) return;
+    setAddingAlert(true);
+    await addAlert(alertType, alertDesc, loc.lat, loc.lng, profile.full_name);
+    setAlertDesc("");
+    setShowAddAlert(false);
+    setAddingAlert(false);
+  };
+
+  // أيقونة التحذير على الخريطة
+  const createAlertIcon = (type) => {
+    const t = ALERT_TYPES.find(a => a.id === type);
+    return L.divIcon({
+      html: `<div style="
+        background:rgba(239,68,68,0.9);
+        border:2px solid #fca5a5;
+        border-radius:50%;
+        width:36px;height:36px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:18px;
+        box-shadow:0 0 12px rgba(239,68,68,0.6);
+      ">${t?.icon || "⚠️"}</div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+      className: "",
+    });
+  };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
+
       {/* My card */}
       <div className="absolute top-3 right-3 z-[1000]">
         <div className="bg-gray-950/95 backdrop-blur border border-orange-500/40 rounded-2xl px-3 py-2 text-right shadow-xl">
@@ -548,7 +675,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         </motion.button>
       </div>
 
-      {/* GPS + zoom */}
+      {/* Right controls */}
       <div className="absolute right-3 top-1/2 -translate-y-1/2 z-[1000] flex flex-col gap-2">
         <motion.button whileTap={{ scale: 0.9 }} onClick={toggleGPS}
           className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${tracking ? "bg-orange-500 border-orange-400 shadow-orange-500/40" : "bg-gray-900 border-gray-700"}`}>
@@ -556,7 +683,62 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
             ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={17} className="text-orange-400" /></motion.div>
             : <Navigation size={17} className={tracking ? "text-white" : "text-gray-500"} />}
         </motion.button>
+
+        {/* زر إضافة تحذير */}
+        <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowAddAlert(!showAddAlert)}
+          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${showAddAlert ? "bg-red-500 border-red-400" : "bg-gray-900 border-gray-700"}`}>
+          <span className="text-lg">{showAddAlert ? "✕" : "⚠️"}</span>
+        </motion.button>
+
+        {/* عدد التحذيرات */}
+        {alerts.length > 0 && (
+          <div className="w-11 h-11 bg-red-500/20 border border-red-500/40 rounded-2xl flex flex-col items-center justify-center">
+            <span className="text-red-400 font-black text-sm">{alerts.length}</span>
+            <span className="text-red-500 text-[9px]">تحذير</span>
+          </div>
+        )}
       </div>
+
+      {/* نموذج إضافة تحذير */}
+      <AnimatePresence>
+        {showAddAlert && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+            className="absolute bottom-24 left-3 right-3 z-[1000]">
+            <div className="bg-gray-950/98 border border-red-500/40 rounded-2xl p-4 backdrop-blur shadow-xl">
+              <p className="text-white font-bold text-sm text-right mb-3">⚠️ إضافة تحذير في موقعك</p>
+              
+              {/* نوع التحذير */}
+              <div className="grid grid-cols-4 gap-2 mb-3">
+                {ALERT_TYPES.map(t => (
+                  <motion.button key={t.id} whileTap={{ scale: 0.9 }} onClick={() => setAlertType(t.id)}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-xs transition-all ${alertType === t.id ? "bg-red-500/30 border-red-500/60 text-red-300" : "bg-gray-800 border-gray-700 text-gray-400"}`}>
+                    <span className="text-lg">{t.icon}</span>
+                    <span className="text-[9px] text-center leading-tight">{t.label}</span>
+                  </motion.button>
+                ))}
+              </div>
+
+              {/* وصف اختياري */}
+              <input value={alertDesc} onChange={e => setAlertDesc(e.target.value)}
+                placeholder="وصف إضافي (اختياري)..." dir="rtl"
+                className="w-full bg-gray-900 border border-gray-700 text-white placeholder-gray-600 rounded-xl px-3 py-2 text-sm mb-3 focus:border-red-500 focus:outline-none" />
+
+              <div className="flex gap-2">
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowAddAlert(false)}
+                  className="flex-1 bg-gray-800 text-gray-400 font-bold py-2.5 rounded-xl text-sm">
+                  إلغاء
+                </motion.button>
+                <motion.button whileTap={{ scale: 0.95 }} onClick={handleAddAlert} disabled={!loc || addingAlert}
+                  className="flex-1 bg-red-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-1">
+                  {addingAlert ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div> : "📍 نشر التحذير"}
+                </motion.button>
+              </div>
+
+              {!loc && <p className="text-red-400 text-xs text-center mt-2">فعّل GPS أولاً لتحديد موقعك</p>}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Selected rider */}
       <AnimatePresence>
@@ -592,14 +774,33 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#111" }} zoomControl={false}>
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          attribution="iims.13"
+          attribution=""
           maxZoom={19}
         />
-        {loc && !stealth && <Marker position={[loc.lat, loc.lng]} icon={createRiderIcon(profile?.full_name || "أنت", speed, true)} />}
+
+        {/* موقعي */}
+        {loc && !stealth && (
+          <Marker position={[loc.lat, loc.lng]} icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url)} />
+        )}
+
+        {/* بقية الدراجين */}
         {riders.filter(r => r.lat && r.lng).map(r => (
-          <Marker key={r.id} position={[r.lat, r.lng]} icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online")}
+          <Marker key={r.id} position={[r.lat, r.lng]}
+            icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url)}
             eventHandlers={{ click: () => setSelected(r) }} />
         ))}
+
+        {/* التحذيرات */}
+        {alerts.filter(a => a.active).map(a => (
+          <Marker key={a.id} position={[a.lat, a.lng]} icon={createAlertIcon(a.type)}
+            eventHandlers={{ click: () => {
+              const t = ALERT_TYPES.find(x => x.id === a.type);
+              if (window.confirm(`${t?.icon} ${t?.label}\nبواسطة: ${a.reporter_name}\n${a.description || ""}\n\nهل تريد حذف هذا التحذير؟`)) {
+                removeAlert(a.id);
+              }
+            }}} />
+        ))}
+
         {loc && <MapCentre loc={loc} />}
       </MapContainer>
     </motion.div>
