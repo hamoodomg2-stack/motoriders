@@ -265,6 +265,20 @@ export default function App() {
     } finally { setLoading(false); }
   };
 
+  // جلب الإشعارات
+  const fetchNotifications = async (uid) => {
+    const { data } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) {
+      setNotifications(data);
+      setUnreadNotif(data.filter(n => !n.is_read).length);
+    }
+  };
+
   const signOut = async () => { await supabase.auth.signOut(); setSession(null); setProfile(null); };
 
   if (loading) return <Splash />;
@@ -470,7 +484,29 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     return () => clearInterval(interval);
   }, []);
   const [unread, setUnread] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadNotif, setUnreadNotif] = useState(0);
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
+
+
+  // Realtime إشعارات
+  useEffect(() => {
+    const ch = supabase.channel("notifications-rt")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${profile.id}` },
+        (payload) => {
+          const n = payload.new;
+          setNotifications(prev => [n, ...prev]);
+          setUnreadNotif(prev => prev + 1);
+          // تنبيه صوتي
+          const msg = new SpeechSynthesisUtterance(n.title);
+          msg.lang = "ar-SA";
+          window.speechSynthesis?.speak(msg);
+        }
+      ).subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [profile.id]);
 
   useEffect(() => {
     const load = async () => {
@@ -491,6 +527,8 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     };
     load();
   }, [profile.id]);
+
+
 
   useEffect(() => {
     const ch = supabase.channel("rt-locations")
@@ -554,6 +592,16 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           <Navigation size={11} />
           <span>{gpsStatus === "active" ? `${speed}` : gpsStatus === "searching" ? "..." : gpsStatus === "error" ? "!" : "GPS"}</span>
         </div>
+        <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
+          className="relative">
+          <Bell size={20} className="text-gray-400" />
+          {unreadNotif > 0 && (
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-[9px] font-black">{unreadNotif > 9 ? "9+" : unreadNotif}</span>
+            </motion.div>
+          )}
+        </motion.button>
       </div>
 
       {/* GPS Error */}
@@ -562,6 +610,42 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }}
             className="bg-red-900/50 border-b border-red-800 px-4 py-2 text-center shrink-0 overflow-hidden">
             <p className="text-red-300 text-xs">{gpsError}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Notifications Panel */}
+      <AnimatePresence>
+        {showNotifications && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="absolute top-14 left-3 right-3 z-[999] bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <button onClick={async () => {
+                await supabase.from("notifications").update({ is_read: true }).eq("user_id", profile.id);
+                setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                setUnreadNotif(0);
+              }} className="text-orange-400 text-xs">قراءة الكل</button>
+              <p className="text-white font-bold text-sm">الإشعارات 🔔</p>
+            </div>
+            <div className="max-h-72 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="text-center py-8 text-gray-600">
+                  <Bell size={28} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">لا توجد إشعارات</p>
+                </div>
+              ) : notifications.map(n => (
+                <div key={n.id} className={`px-4 py-3 border-b border-gray-800/50 text-right ${!n.is_read ? "bg-orange-500/5" : ""}`}>
+                  <div className="flex items-start justify-end gap-2">
+                    {!n.is_read && <div className="w-2 h-2 bg-orange-500 rounded-full mt-1.5 shrink-0" />}
+                    <div>
+                      <p className="text-white text-sm font-semibold">{n.title}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">{n.body}</p>
+                      <p className="text-gray-600 text-[10px] mt-1">{new Date(n.created_at).toLocaleDateString("ar")}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1127,6 +1211,24 @@ function AdminPanel({ session, onSignOut }) {
     setActionId(id);
     const oldStatus = profiles.find(p => p.id === id)?.status;
     await supabase.from("profiles").update({ status: newStatus }).eq("id", id);
+
+    // إرسال إشعار للمستخدم
+    if (newStatus === "approved") {
+      await supabase.from("notifications").insert({
+        user_id: id,
+        title: "✅ تمت الموافقة على حسابك!",
+        body: "مرحباً! تم قبول حسابك في MotoRiders. يمكنك الآن الوصول للخريطة.",
+        type: "approval",
+      });
+    } else if (newStatus === "banned") {
+      await supabase.from("notifications").insert({
+        user_id: id,
+        title: "🚫 تم تعليق حسابك",
+        body: "تم تعليق حسابك من قبل المسؤول. تواصل معنا للمزيد.",
+        type: "rejection",
+      });
+    }
+
     setProfiles(prev => prev.map(p => p.id === id ? { ...p, status: newStatus } : p));
     setStats(prev => ({ ...prev, [oldStatus]: Math.max(0, prev[oldStatus] - 1), [newStatus]: prev[newStatus] + 1 }));
     showToast(newStatus === "approved" ? `✅ تمت الموافقة على ${name}` : newStatus === "banned" ? `🚫 تم حظر ${name}` : `⏳ تم إرجاع ${name}`, newStatus === "approved" ? "success" : newStatus === "banned" ? "error" : "info");
