@@ -616,50 +616,57 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
 
       {/* Notifications Panel */}
       {/* Notifications Panel */}
+      {/* Notifications Panel — يدفع المحتوى للأسفل */}
       <AnimatePresence>
         {showNotifications && (
-          <>
-            {/* خلفية شفافة للإغلاق */}
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="absolute inset-0 z-[998]"
-              onClick={() => setShowNotifications(false)} />
-
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-              className="absolute left-3 right-3 z-[999] bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden"
-              style={{ top: "60px" }}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-                <div className="flex items-center gap-2">
-                  <button onClick={async () => {
-                    await supabase.from("notifications").update({ is_read: true }).eq("user_id", profile.id);
-                    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-                    setUnreadNotif(0);
-                  }} className="text-orange-400 text-xs">قراءة الكل</button>
-                  <button onClick={() => setShowNotifications(false)}
-                    className="w-6 h-6 bg-gray-800 rounded-full flex items-center justify-center text-gray-400 hover:text-white text-xs">✕</button>
-                </div>
-                <p className="text-white font-bold text-sm">🔔 الإشعارات</p>
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
+            className="overflow-hidden shrink-0 bg-gray-900 border-b border-gray-700"
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div className="flex items-center gap-2">
+                <button onClick={async () => {
+                  await supabase.from("notifications").update({ is_read: true }).eq("user_id", profile.id);
+                  setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                  setUnreadNotif(0);
+                }} className="text-orange-400 text-xs font-bold">قراءة الكل</button>
+                <button onClick={() => setShowNotifications(false)}
+                  className="w-6 h-6 bg-gray-800 rounded-full flex items-center justify-center text-gray-400 text-xs">✕</button>
               </div>
-              <div className="max-h-64 overflow-y-auto">
-                {notifications.length === 0 ? (
-                  <div className="text-center py-8 text-gray-600">
-                    <Bell size={28} className="mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">لا توجد إشعارات</p>
-                  </div>
-                ) : notifications.map(n => (
-                  <div key={n.id} className={`px-4 py-3 border-b border-gray-800/50 text-right ${!n.is_read ? "bg-orange-500/5" : ""}`}>
-                    <div className="flex items-start justify-end gap-2">
-                      {!n.is_read && <div className="w-2 h-2 bg-orange-500 rounded-full mt-1.5 shrink-0" />}
-                      <div>
-                        <p className="text-white text-sm font-semibold">{n.title}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{n.body}</p>
-                        <p className="text-gray-600 text-[10px] mt-1">{new Date(n.created_at).toLocaleDateString("ar")}</p>
-                      </div>
+              <p className="text-white font-bold text-sm">🔔 الإشعارات</p>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="text-center py-6 text-gray-600">
+                  <Bell size={24} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">لا توجد إشعارات</p>
+                </div>
+              ) : notifications.map(n => (
+                <motion.div key={n.id}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className={`px-4 py-3 border-b border-gray-800/50 text-right ${!n.is_read ? "bg-orange-500/5" : ""}`}>
+                  <div className="flex items-start justify-end gap-2">
+                    {!n.is_read && (
+                      <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.5, repeat: Infinity }}
+                        className="w-2 h-2 bg-orange-500 rounded-full mt-1.5 shrink-0" />
+                    )}
+                    <div>
+                      <p className="text-white text-sm font-semibold">{n.title}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">{n.body}</p>
+                      <p className="text-gray-600 text-[10px] mt-1">
+                        {new Date(n.created_at).toLocaleDateString("ar")}
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
-            </motion.div>
-          </>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
