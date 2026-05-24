@@ -1560,6 +1560,7 @@ function AdminPanel({ session, onSignOut }) {
   const [allRides, setAllRides] = useState([]);
   const [showAllRides, setShowAllRides] = useState(false);
 
+
   useEffect(() => {
     if (session) {
       supabase.from("profiles").select("*").eq("id", session.user.id).single()
@@ -1701,41 +1702,75 @@ function AdminPanel({ session, onSignOut }) {
       </AnimatePresence>
 
       {/* Header */}
-      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
-        <div className="flex items-center gap-1.5">
-          <button onClick={fetchAll} className="text-gray-400 hover:text-orange-400 transition-colors p-1">
-            <RefreshCw size={15} />
-          </button>
-          <button onClick={() => setShowRides(!showRides)}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border relative ${showRides ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
-            🏍️ انتظار
-            {pendingRides.length > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full text-[8px] text-white flex items-center justify-center font-black">
-                {pendingRides.length}
-              </span>
-            )}
-          </button>
-          <button onClick={() => setShowAllRides(!showAllRides)}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${showAllRides ? "bg-blue-500 text-white border-blue-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
-            📋 كل
-          </button>
-          <button onClick={() => setCodesTab(!codesTab)}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${codesTab ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
-            🎟️ كودات
-          </button>
-          <button onClick={() => window.location.href = "/"}
-            className="text-gray-400 hover:text-orange-400 transition-colors p-1">
-            <ArrowRight size={15} className="rotate-180" />
-          </button>
-        </div>
+      {/* Header */}
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0"
+        style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
+
+        {/* Burger Menu Button */}
+        <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowMenu(!showMenu)}
+          className="w-9 h-9 bg-gray-800 border border-gray-700 rounded-xl flex items-center justify-center relative">
+          <motion.div animate={{ rotate: showMenu ? 45 : 0 }} transition={{ duration: 0.2 }}>
+            {showMenu ? <XCircle size={18} className="text-orange-400" /> : <Settings size={18} className="text-gray-400" />}
+          </motion.div>
+          {pendingRides.length > 0 && !showMenu && (
+            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1, repeat: Infinity }}
+              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-[9px] font-black">{pendingRides.length}</span>
+            </motion.div>
+          )}
+        </motion.button>
+
+        {/* Title */}
         <div className="flex items-center gap-2">
           <div className="text-right">
             <p className="text-base font-black">MOTO<span className="text-orange-500">RIDERS</span></p>
             <p className="text-gray-500 text-xs">لوحة الأدمن</p>
           </div>
-          <div className="w-9 h-9 bg-orange-500/20 border border-orange-500/40 rounded-xl flex items-center justify-center"><Crown size={18} className="text-orange-500" /></div>
+          <div className="w-9 h-9 bg-orange-500/20 border border-orange-500/40 rounded-xl flex items-center justify-center">
+            <Crown size={18} className="text-orange-500" />
+          </div>
         </div>
       </div>
+
+      {/* Dropdown Menu */}
+      <AnimatePresence>
+        {showMenu && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -10 }}
+              transition={{ type: "spring", bounce: 0.3, duration: 0.3 }}
+              className="absolute left-3 z-50 bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden min-w-[200px]"
+              style={{ top: "70px" }}>
+              {[
+                { icon: "🔄", label: "تحديث البيانات", onClick: () => { fetchAll(); setShowMenu(false); } },
+                { icon: "🏍️", label: "رحلات الانتظار", badge: pendingRides.length, onClick: () => { setShowRides(!showRides); setShowMenu(false); } },
+                { icon: "📋", label: "كل الرحلات", onClick: () => { setShowAllRides(!showAllRides); setShowMenu(false); } },
+                { icon: "🎟️", label: "كودات الدعوة", onClick: () => { setCodesTab(!codesTab); setShowMenu(false); } },
+                { icon: "←", label: "رجوع للتطبيق", onClick: () => window.location.href = "/", danger: false, back: true },
+              ].map((item, i) => (
+                <motion.button key={i} whileTap={{ scale: 0.97 }} onClick={item.onClick}
+                  className={`w-full flex items-center justify-between px-4 py-3.5 text-right border-b border-gray-800 last:border-0 hover:bg-gray-800/50 transition-colors ${item.back ? "text-orange-400" : "text-gray-200"}`}>
+                  <div className="flex items-center gap-2">
+                    {item.badge > 0 && (
+                      <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">{item.label}</span>
+                    <span className="text-lg">{item.icon}</span>
+                  </div>
+                </motion.button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="p-4 space-y-4 max-w-2xl mx-auto">
