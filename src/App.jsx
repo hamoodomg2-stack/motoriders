@@ -1662,7 +1662,7 @@ function AdminPanel({ session, onSignOut }) {
       </AnimatePresence>
  
       {/* Header */}
-      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0 safe-top">
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
         <div className="flex items-center gap-3">
           <button onClick={fetchAll} className="text-gray-400 hover:text-orange-400 transition-colors"><RefreshCw size={17} /></button>
           <button onClick={() => setShowRides(!showRides)}
