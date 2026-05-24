@@ -1702,29 +1702,30 @@ function AdminPanel({ session, onSignOut }) {
 
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
-        <div className="flex items-center gap-3">
-          <button onClick={fetchAll} className="text-gray-400 hover:text-orange-400 transition-colors"><RefreshCw size={17} /></button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={fetchAll} className="text-gray-400 hover:text-orange-400 transition-colors p-1">
+            <RefreshCw size={15} />
+          </button>
           <button onClick={() => setShowRides(!showRides)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border relative ${showRides ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
-            🏍️ الرحلات
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold border relative ${showRides ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
+            🏍️ انتظار
             {pendingRides.length > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full text-[9px] text-white flex items-center justify-center font-black">
+              <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full text-[8px] text-white flex items-center justify-center font-black">
                 {pendingRides.length}
               </span>
             )}
           </button>
+          <button onClick={() => setShowAllRides(!showAllRides)}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${showAllRides ? "bg-blue-500 text-white border-blue-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
+            📋 كل
+          </button>
           <button onClick={() => setCodesTab(!codesTab)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${codesTab ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
-            🎟️ الكودات
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${codesTab ? "bg-orange-500 text-white border-orange-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
+            🎟️ كودات
           </button>
           <button onClick={() => window.location.href = "/"}
-            className="text-gray-400 hover:text-orange-400 transition-colors flex items-center gap-1 text-xs">
-            <ArrowRight size={14} className="rotate-180" />
-            رجوع للتطبيق
-          </button>
-          <button onClick={() => setShowAllRides(!showAllRides)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${showAllRides ? "bg-blue-500 text-white border-blue-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
-            📋 كل الرحلات
+            className="text-gray-400 hover:text-orange-400 transition-colors p-1">
+            <ArrowRight size={15} className="rotate-180" />
           </button>
         </div>
         <div className="flex items-center gap-2">
@@ -1823,7 +1824,7 @@ function AdminPanel({ session, onSignOut }) {
             </div>
           )}
 
-          
+
           {/* Codes Section */}
           {codesTab && (
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
