@@ -10,14 +10,14 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
-
+ 
 /* ─── SUPABASE — ضع بياناتك هنا ─── */
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://hygfxmdsadiityhgifsz.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Z2Z4bWRzYWRpaXR5aGdpZnN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzY2MzUsImV4cCI6MjA5NDcxMjYzNX0.7tRlIaDyfgjZR4kJNHdIvfrcIwf-_cr5BQWjF3v7xgg";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
+ 
 const VALID_INVITE_CODES = ["MOTO2024", "RIDER001", "SPEED99", "BIKER42"];
-
+ 
 /* ─── أنواع التحذيرات ─── */
 const ALERT_TYPES = [
   { id: "pothole", label: "حفرة خطيرة", icon: "🕳️" },
@@ -28,7 +28,7 @@ const ALERT_TYPES = [
   { id: "accident", label: "حادث", icon: "🚨" },
   { id: "other", label: "أخرى", icon: "⚠️" },
 ];
-
+ 
 /* ─── حساب المسافة بين نقطتين (متر) ─── */
 function getDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -37,13 +37,13 @@ function getDistance(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-
+ 
 const MOCK_RIDERS = [
   { id: "m1", full_name: "أحمد السريع", bike_type: "Yamaha R1", speed: 120, current_speed: 120, lat: 24.688, lng: 46.722, status: "online" },
   { id: "m2", full_name: "محمد الصقر", bike_type: "Kawasaki Z900", speed: 95, current_speed: 95, lat: 24.695, lng: 46.730, status: "online" },
   { id: "m3", full_name: "خالد البرق", bike_type: "Honda CBR", speed: 0, current_speed: 0, lat: 24.680, lng: 46.715, status: "offline" },
 ];
-
+ 
 /* ─── Leaflet marker icon ─── */
 const createRiderIcon = (name, speed, isOnline, avatarUrl) => {
   const glowColor = isOnline ? "#f97316" : "#6b7280";
@@ -81,13 +81,13 @@ const createRiderIcon = (name, speed, isOnline, avatarUrl) => {
     className: "",
   });
 };
-
+ 
 /* ─── Safety Alerts Hook ─── */
 function useSafetyAlerts(myLoc, profile) {
   const [alerts, setAlerts] = useState([]);
   const [showAddAlert, setShowAddAlert] = useState(false);
   const notifiedRef = useRef(new Set());
-
+ 
   // جلب التحذيرات النشطة
   useEffect(() => {
     const fetchAlerts = async () => {
@@ -100,7 +100,7 @@ function useSafetyAlerts(myLoc, profile) {
       if (data) setAlerts(data);
     };
     fetchAlerts();
-
+ 
     // Realtime
     const ch = supabase.channel("safety-alerts-rt")
       .on("postgres_changes",
@@ -109,7 +109,7 @@ function useSafetyAlerts(myLoc, profile) {
       ).subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
-
+ 
   // تنبيه القرب — إذا اقتربت من تحذير بأقل من 200 متر
   useEffect(() => {
     if (!myLoc || !alerts.length) return;
@@ -137,7 +137,7 @@ function useSafetyAlerts(myLoc, profile) {
       if (dist > 500) notifiedRef.current.delete(alert.id);
     });
   }, [myLoc, alerts]);
-
+ 
   const addAlert = async (type, description, lat, lng, reporterName) => {
     const { data } = await supabase.from("safety_alerts").insert({
       reporter_id: profile.id,
@@ -147,15 +147,15 @@ function useSafetyAlerts(myLoc, profile) {
     }).select().single();
     if (data) setAlerts(prev => [data, ...prev]);
   };
-
+ 
   const removeAlert = async (id) => {
     await supabase.from("safety_alerts").update({ active: false }).eq("id", id);
     setAlerts(prev => prev.filter(a => a.id !== id));
   };
-
+ 
   return { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert };
 }
-
+ 
 /* ─── GPS Hook ─── */
 function useGPS(profileId, stealth) {
   const [loc, setLoc] = useState(null);
@@ -165,7 +165,7 @@ function useGPS(profileId, stealth) {
   const watchRef = useRef(null);
   const intervalRef = useRef(null);
   const lastRef = useRef(null);
-
+ 
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
     await supabase.from("locations").upsert(
@@ -178,7 +178,7 @@ function useGPS(profileId, stealth) {
       { onConflict: "profile_id" }
     );
   }, [profileId, stealth]);
-
+ 
   const start = useCallback(() => {
     if (!navigator.geolocation) { setError("GPS غير مدعوم"); setStatus("error"); return; }
     setStatus("searching");
@@ -199,7 +199,7 @@ function useGPS(profileId, stealth) {
       if (lastRef.current) upload(lastRef.current.lat, lastRef.current.lng, lastRef.current.speed / 3.6);
     }, 10000);
   }, [upload]);
-
+ 
   const stop = useCallback(async () => {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -211,12 +211,12 @@ function useGPS(profileId, stealth) {
         .eq("profile_id", profileId);
     }
   }, [profileId]);
-
+ 
   useEffect(() => () => {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
   }, []);
-
+ 
   useEffect(() => {
     const handleUnload = async () => {
       if (profileId) {
@@ -230,10 +230,10 @@ function useGPS(profileId, stealth) {
       window.removeEventListener("pagehide", handleUnload);
     };
   }, [profileId]);
-
+ 
   return { loc, speed, status, error, start, stop };
 }
-
+ 
 /* ════════════════════════════════════════
    MAIN APP
 ════════════════════════════════════════ */
@@ -244,7 +244,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState("login");
   const [activeTab, setActiveTab] = useState("map");
   const isAdmin = window.location.pathname === "/admin";
-
+ 
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 5000);
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -260,14 +260,14 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
-
+ 
   const fetchProfile = async (uid) => {
     try {
       const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
       setProfile(data);
     } finally { setLoading(false); }
   };
-
+ 
   // جلب الإشعارات
   const fetchNotifications = async (uid) => {
     const { data } = await supabase
@@ -281,17 +281,17 @@ export default function App() {
       setUnreadNotif(data.filter(n => !n.is_read).length);
     }
   };
-
+ 
   const signOut = async () => { await supabase.auth.signOut(); setSession(null); setProfile(null); };
-
+ 
   if (loading) return <Splash />;
   if (isAdmin) return <AdminPanel session={session} onSignOut={signOut} />;
   if (!session) return <AuthScreen mode={authMode} setMode={setAuthMode} />;
   if (!profile || profile.status === "pending") return <PendingScreen profile={profile} onSignOut={signOut} />;
-
+ 
   return <MainApp session={session} profile={profile} activeTab={activeTab} setActiveTab={setActiveTab} onSignOut={signOut} />;
 }
-
+ 
 /* ─── Splash ─── */
 function Splash() {
   return (
@@ -305,7 +305,7 @@ function Splash() {
     </div>
   );
 }
-
+ 
 /* ─── Auth Screen ─── */
 function AuthScreen({ mode, setMode }) {
   const [email, setEmail] = useState("");
@@ -317,7 +317,7 @@ function AuthScreen({ mode, setMode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
+ 
   const submit = async () => {
     setError(""); setSuccess(""); setLoading(true);
     try {
@@ -326,7 +326,7 @@ function AuthScreen({ mode, setMode }) {
         if (error) throw new Error("البريد أو كلمة المرور غير صحيحة");
       } else {
         if (!name || !bike) throw new Error("يرجى تعبئة جميع الحقول");
-
+ 
         const { data: codeData, error: codeError } = await supabase
           .from("invite_codes")
           .select("*")
@@ -334,12 +334,12 @@ function AuthScreen({ mode, setMode }) {
           .eq("is_used", false)
           .gt("expires_at", new Date().toISOString())
           .maybeSingle();
-
+ 
         if (codeError || !codeData) throw new Error("كود الدعوة غير صحيح أو منتهي الصلاحية!");
-
+ 
         const signUpResult = await supabase.auth.signUp({ email, password: pass });
         if (signUpResult.error) throw new Error(signUpResult.error.message);
-
+ 
         if (signUpResult.data.user) {
           await supabase.from("profiles").insert({
             id: signUpResult.data.user.id,
@@ -358,7 +358,7 @@ function AuthScreen({ mode, setMode }) {
       }
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-
+ 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-radial from-orange-900/20 via-transparent to-transparent pointer-events-none" />
@@ -368,7 +368,7 @@ function AuthScreen({ mode, setMode }) {
           <h1 className="text-3xl font-black text-white tracking-widest">MOTO<span className="text-orange-500">RIDERS</span></h1>
           <p className="text-gray-500 text-sm mt-1">نظام تتبع الدراجين</p>
         </div>
-
+ 
         <div className="flex bg-gray-900 rounded-2xl p-1 mb-5 border border-gray-800">
           {["login", "register"].map(m => (
             <button key={m} onClick={() => { setMode(m); setError(""); }}
@@ -377,7 +377,7 @@ function AuthScreen({ mode, setMode }) {
             </button>
           ))}
         </div>
-
+ 
         <div className="space-y-3">
           <AnimatePresence>
             {mode === "register" && (
@@ -393,12 +393,12 @@ function AuthScreen({ mode, setMode }) {
             <Field icon={<Lock size={15} />} placeholder="كلمة المرور" type={showPass ? "text" : "password"} value={pass} onChange={setPass} />
             <button onClick={() => setShowPass(!showPass)} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">{showPass ? <EyeOff size={15} /> : <Eye size={15} />}</button>
           </div>
-
+ 
           <AnimatePresence>
             {error && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 bg-red-900/40 border border-red-700 text-red-400 text-sm p-3 rounded-xl"><XCircle size={15} />{error}</motion.div>}
             {success && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 bg-green-900/40 border border-green-700 text-green-400 text-sm p-3 rounded-xl"><CheckCircle size={15} />{success}</motion.div>}
           </AnimatePresence>
-
+ 
           <motion.button whileTap={{ scale: 0.97 }} onClick={submit} disabled={loading}
             className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-orange-500/40 disabled:opacity-60 text-base">
             {loading ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={20} /></motion.div>
@@ -409,7 +409,7 @@ function AuthScreen({ mode, setMode }) {
     </div>
   );
 }
-
+ 
 function Field({ icon, placeholder, type = "text", value, onChange, hint }) {
   return (
     <div>
@@ -424,7 +424,7 @@ function Field({ icon, placeholder, type = "text", value, onChange, hint }) {
     </div>
   );
 }
-
+ 
 /* ─── Pending Screen ─── */
 function PendingScreen({ profile, onSignOut }) {
   return (
@@ -468,7 +468,7 @@ function PendingScreen({ profile, onSignOut }) {
     </div>
   );
 }
-
+ 
 /* ─── Main App ─── */
 function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [riders, setRiders] = useState([]);
@@ -491,8 +491,8 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadNotif, setUnreadNotif] = useState(0);
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
-
-
+ 
+ 
   // Realtime إشعارات
   useEffect(() => {
     const ch = supabase.channel("notifications-rt")
@@ -510,16 +510,16 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       ).subscribe();
     return () => supabase.removeChannel(ch);
   }, [profile.id]);
-
+ 
   useEffect(() => {
     const load = async () => {
       const { data, error } = await supabase
         .from("approved_riders_with_location")
         .select("*")
         .neq("id", profile.id);
-
+ 
       console.log("Riders data:", data, "Error:", error);
-
+ 
       if (data && data.length > 0) {
         setRiders(data.map(r => ({
           ...r,
@@ -530,9 +530,9 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     };
     load();
   }, [profile.id]);
-
-
-
+ 
+ 
+ 
   useEffect(() => {
     const ch = supabase.channel("rt-locations")
       .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, ({ new: n }) => {
@@ -542,7 +542,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       .subscribe(s => setConnected(s === "SUBSCRIBED"));
     return () => supabase.removeChannel(ch);
   }, []);
-
+ 
   // بعد channel locations أضف هذا
   useEffect(() => {
     const ch = supabase.channel("chat-notify")
@@ -557,17 +557,17 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       ).subscribe();
     return () => supabase.removeChannel(ch);
   }, [activeTab, profile.id]);
-
+ 
   // عند فتح الدردشة — صفّر العداد
   useEffect(() => {
     if (activeTab === "chat") setUnread(0);
   }, [activeTab]);
-
+ 
   const toggleGPS = () => {
     if (tracking) { stop(); setTracking(false); }
     else { start(); setTracking(true); }
   };
-
+ 
   const tabs = [
     { id: "map", icon: Map, label: "الخريطة" },
     { id: "riders", icon: Users, label: "سائقون" },
@@ -575,7 +575,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     { id: "groups", icon: Shield, label: "مجموعات" },
     { id: "profile", icon: User, label: "بروفايل" },
   ];
-
+ 
   return (
     <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
@@ -606,7 +606,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           )}
         </motion.button>
       </div>
-
+ 
       {/* GPS Error */}
       <AnimatePresence>
         {gpsError && (
@@ -616,7 +616,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           </motion.div>
         )}
       </AnimatePresence>
-
+ 
       {/* Notifications Panel */}
       {/* Notifications Panel */}
       {/* Notifications Panel — يدفع المحتوى للأسفل */}
@@ -641,7 +641,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
               </div>
               <p className="text-white font-bold text-sm">🔔 الإشعارات</p>
             </div>
-
+ 
             <div className="max-h-56 overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="text-center py-6 text-gray-600">
@@ -672,7 +672,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           </motion.div>
         )}
       </AnimatePresence>
-
+ 
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
@@ -683,7 +683,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
-
+ 
       {/* Bottom Nav */}
       <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex items-center justify-around px-2 pt-2 pb-3 max-w-lg mx-auto">
@@ -712,14 +712,14 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     </div>
   );
 }
-
+ 
 /* ─── Map Tab ─── */
 function MapCentre({ loc }) {
   const map = useMap();
   useEffect(() => { if (loc) map.setView([loc.lat, loc.lng], map.getZoom()); }, [loc, map]);
   return null;
 }
-
+ 
 function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS }) {
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
@@ -728,7 +728,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   const [alertType, setAlertType] = useState("pothole");
   const [alertDesc, setAlertDesc] = useState("");
   const [addingAlert, setAddingAlert] = useState(false);
-
+ 
   const handleAddAlert = async () => {
     if (!loc) return;
     setAddingAlert(true);
@@ -737,7 +737,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     setShowAddAlert(false);
     setAddingAlert(false);
   };
-
+ 
   // أيقونة التحذير على الخريطة
   const createAlertIcon = (type) => {
     const t = ALERT_TYPES.find(a => a.id === type);
@@ -756,10 +756,10 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       className: "",
     });
   };
-
+ 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
-
+ 
       {/* My card */}
       <div className="absolute top-3 right-3 z-[1000]">
         <div className="bg-gray-950/95 backdrop-blur border border-orange-500/40 rounded-2xl px-3 py-2 text-right shadow-xl">
@@ -767,7 +767,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           <p className="text-orange-500 font-black text-base">{speed} كم/س</p>
         </div>
       </div>
-
+ 
       {/* Online + stealth */}
       <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-2">
         <div className="bg-gray-950/95 backdrop-blur border border-green-500/40 rounded-2xl px-3 py-2 flex items-center gap-2">
@@ -781,7 +781,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           {stealth ? <EyeOff size={13} /> : <Eye size={13} />}{stealth ? "مخفي" : "الخفاء"}
         </motion.button>
       </div>
-
+ 
       {/* Right controls */}
       <div className="absolute right-3 top-1/2 -translate-y-1/2 z-[1000] flex flex-col gap-2">
         <motion.button whileTap={{ scale: 0.9 }} onClick={toggleGPS}
@@ -790,13 +790,13 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
             ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={17} className="text-orange-400" /></motion.div>
             : <Navigation size={17} className={tracking ? "text-white" : "text-gray-500"} />}
         </motion.button>
-
+ 
         {/* زر إضافة تحذير */}
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowAddAlert(!showAddAlert)}
           className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${showAddAlert ? "bg-red-500 border-red-400" : "bg-gray-900 border-gray-700"}`}>
           <span className="text-lg">{showAddAlert ? "✕" : "⚠️"}</span>
         </motion.button>
-
+ 
         {/* عدد التحذيرات */}
         {alerts.length > 0 && (
           <div className="w-11 h-11 bg-red-500/20 border border-red-500/40 rounded-2xl flex flex-col items-center justify-center">
@@ -805,7 +805,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           </div>
         )}
       </div>
-
+ 
       {/* نموذج إضافة تحذير */}
       <AnimatePresence>
         {showAddAlert && (
@@ -813,7 +813,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
             className="absolute bottom-24 left-3 right-3 z-[1000]">
             <div className="bg-gray-950/98 border border-red-500/40 rounded-2xl p-4 backdrop-blur shadow-xl">
               <p className="text-white font-bold text-sm text-right mb-3">⚠️ إضافة تحذير في موقعك</p>
-
+ 
               {/* نوع التحذير */}
               <div className="grid grid-cols-4 gap-2 mb-3">
                 {ALERT_TYPES.map(t => (
@@ -824,12 +824,12 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
                   </motion.button>
                 ))}
               </div>
-
+ 
               {/* وصف اختياري */}
               <input value={alertDesc} onChange={e => setAlertDesc(e.target.value)}
                 placeholder="وصف إضافي (اختياري)..." dir="rtl"
                 className="w-full bg-gray-900 border border-gray-700 text-white placeholder-gray-600 rounded-xl px-3 py-2 text-sm mb-3 focus:border-red-500 focus:outline-none" />
-
+ 
               <div className="flex gap-2">
                 <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowAddAlert(false)}
                   className="flex-1 bg-gray-800 text-gray-400 font-bold py-2.5 rounded-xl text-sm">
@@ -840,13 +840,13 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
                   {addingAlert ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div> : "📍 نشر التحذير"}
                 </motion.button>
               </div>
-
+ 
               {!loc && <p className="text-red-400 text-xs text-center mt-2">فعّل GPS أولاً لتحديد موقعك</p>}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-
+ 
       {/* Selected rider */}
       <AnimatePresence>
         {selected && (
@@ -866,7 +866,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           </motion.div>
         )}
       </AnimatePresence>
-
+ 
       {/* SOS */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1">
         <motion.button whileTap={{ scale: 0.88 }} onClick={() => { setSos(true); setTimeout(() => setSos(false), 5000); }}
@@ -877,26 +877,26 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         </motion.button>
         {sos && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-xs font-bold">جاري الإرسال...</motion.p>}
       </div>
-
+ 
       <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#111" }} zoomControl={false}>
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           attribution=""
           maxZoom={19}
         />
-
+ 
         {/* موقعي */}
         {loc && !stealth && (
           <Marker position={[loc.lat, loc.lng]} icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url)} />
         )}
-
+ 
         {/* بقية الدراجين */}
         {riders.filter(r => r.lat && r.lng).map(r => (
           <Marker key={r.id} position={[r.lat, r.lng]}
             icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url)}
             eventHandlers={{ click: () => setSelected(r) }} />
         ))}
-
+ 
         {/* التحذيرات */}
         {alerts.filter(a => a.active).map(a => (
           <Marker key={a.id} position={[a.lat, a.lng]} icon={createAlertIcon(a.type)}
@@ -909,13 +909,13 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
               }
             }} />
         ))}
-
+ 
         {loc && <MapCentre loc={loc} />}
       </MapContainer>
     </motion.div>
   );
 }
-
+ 
 /* ─── Riders Tab ─── */
 function RidersTab({ riders }) {
   return (
@@ -947,20 +947,20 @@ function RidersTab({ riders }) {
     </motion.div>
   );
 }
-
+ 
 /* ─── Chat Tab ─── */
 const MOCK_MSGS = [
   { id: 1, sender: "أحمد", text: "الطريق واضح 🟢", time: "14:32", mine: false },
   { id: 2, sender: "محمد", text: "كاميرا على الحلقة! ⚠️", time: "14:35", mine: false },
   { id: 3, sender: "أنت", text: "شكراً 👍", time: "14:36", mine: true },
 ];
-
+ 
 function ChatTab({ profile }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
-
+ 
   // جلب الرسائل القديمة
   useEffect(() => {
     const fetchMsgs = async () => {
@@ -973,7 +973,7 @@ function ChatTab({ profile }) {
       setLoading(false);
     };
     fetchMsgs();
-
+ 
     // Realtime — استقبال الرسائل فوراً
     const channel = supabase
       .channel("messages-realtime")
@@ -984,33 +984,33 @@ function ChatTab({ profile }) {
         }
       )
       .subscribe();
-
+ 
     return () => supabase.removeChannel(channel);
   }, []);
-
+ 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs]);
-
+ 
   const send = async () => {
     if (!input.trim()) return;
     const text = input.trim();
     setInput("");
-
+ 
     await supabase.from("messages").insert({
       sender_id: profile.id,
       sender_name: profile.full_name,
       content: text,
     });
   };
-
+ 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col">
       <div className="px-4 py-3 border-b border-gray-800 shrink-0">
         <p className="text-white font-bold text-sm text-right">دردشة المجموعة</p>
         <p className="text-green-400 text-xs text-right">مباشر</p>
       </div>
-
+ 
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-full">
@@ -1045,7 +1045,7 @@ function ChatTab({ profile }) {
         )}
         <div ref={bottomRef} />
       </div>
-
+ 
       <div className="p-3 border-t border-gray-800 flex gap-2 shrink-0">
         <motion.button whileTap={{ scale: 0.9 }} onClick={send}
           className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/40">
@@ -1059,13 +1059,13 @@ function ChatTab({ profile }) {
     </motion.div>
   );
 }
-
+ 
 /* ─── Groups Tab ─── */
 const MOCK_GROUPS = [
   { id: 1, name: "فريق الصقور", members: 8, ride: "جدة → مكة", icon: "🦅" },
   { id: 2, name: "دراجي الليل", members: 5, ride: "الرياض ring road", icon: "🌙" },
 ];
-
+ 
 function GroupsTab({ profile }) {
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1079,9 +1079,9 @@ function GroupsTab({ profile }) {
   const [msgInput, setMsgInput] = useState("");
   const [toast, setToast] = useState(null);
   const bottomRef = useRef(null);
-
+ 
   const showToast = (msg, type) => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-
+ 
   useEffect(() => {
     fetchRides();
     const ch = supabase.channel("rides-rt")
@@ -1090,7 +1090,7 @@ function GroupsTab({ profile }) {
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
-
+ 
   useEffect(() => {
     if (!selectedRide) return;
     fetchMessages(selectedRide.id);
@@ -1101,9 +1101,9 @@ function GroupsTab({ profile }) {
       ).subscribe();
     return () => supabase.removeChannel(ch);
   }, [selectedRide?.id]);
-
+ 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [rideMessages]);
-
+ 
   const fetchRides = async () => {
     const { data } = await supabase
       .from("rides")
@@ -1113,13 +1113,13 @@ function GroupsTab({ profile }) {
     if (data) setRides(data);
     setLoading(false);
   };
-
+ 
   const fetchMessages = async (rideId) => {
     const { data } = await supabase.from("ride_messages").select("*")
       .eq("ride_id", rideId).order("created_at", { ascending: true }).limit(50);
     if (data) setRideMessages(data);
   };
-
+ 
   const createRide = async () => {
     if (!rideName.trim()) return;
     setCreating(true);
@@ -1140,7 +1140,7 @@ function GroupsTab({ profile }) {
     }
     setCreating(false);
   };
-
+ 
   const joinRide = async (ride) => {
     const isMember = ride.ride_members?.some(m => m.profile_id === profile.id);
     if (isMember) {
@@ -1160,17 +1160,17 @@ function GroupsTab({ profile }) {
       showToast("✅ انضممت للرحلة!", "success");
     }
   };
-
+ 
   const startRide = async (ride) => {
     await supabase.from("rides").update({ status: "active", started_at: new Date().toISOString() }).eq("id", ride.id);
     showToast("🏁 انطلقت الرحلة!", "success");
   };
-
+ 
   const endRide = async (ride) => {
     await supabase.from("rides").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", ride.id);
     showToast("🎉 انتهت الرحلة!", "success");
   };
-
+ 
   const sendMsg = async () => {
     if (!msgInput.trim() || !selectedRide) return;
     await supabase.from("ride_messages").insert({
@@ -1179,10 +1179,10 @@ function GroupsTab({ profile }) {
     });
     setMsgInput("");
   };
-
+ 
   const statusColor = { waiting: "text-yellow-400 bg-yellow-500/20 border-yellow-500/30", active: "text-green-400 bg-green-500/20 border-green-500/30" };
   const statusLabel = { waiting: "⏳ انتظار", active: "🏁 جارية" };
-
+ 
   // شاشة دردشة الرحلة
   if (selectedRide) return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col">
@@ -1198,7 +1198,7 @@ function GroupsTab({ profile }) {
           {statusLabel[selectedRide.status] || "⏳"}
         </span>
       </div>
-
+ 
       {/* الأعضاء */}
       <div className="px-4 py-2 border-b border-gray-800 shrink-0">
         <p className="text-gray-500 text-xs text-right mb-2">الأعضاء:</p>
@@ -1212,7 +1212,7 @@ function GroupsTab({ profile }) {
           ))}
         </div>
       </div>
-
+ 
       {/* الرسائل */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {rideMessages.length === 0 ? (
@@ -1239,7 +1239,7 @@ function GroupsTab({ profile }) {
         })}
         <div ref={bottomRef} />
       </div>
-
+ 
       {/* إرسال رسالة */}
       <div className="p-3 border-t border-gray-800 flex gap-2 shrink-0">
         <motion.button whileTap={{ scale: 0.9 }} onClick={sendMsg}
@@ -1253,11 +1253,11 @@ function GroupsTab({ profile }) {
       </div>
     </motion.div>
   );
-
+ 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
       className="absolute inset-0 overflow-y-auto p-4">
-
+ 
       <AnimatePresence>
         {toast && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -1266,7 +1266,7 @@ function GroupsTab({ profile }) {
           </motion.div>
         )}
       </AnimatePresence>
-
+ 
       <div className="flex items-center justify-between mb-4">
         <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(!showCreate)}
           className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-orange-500/30">
@@ -1274,7 +1274,7 @@ function GroupsTab({ profile }) {
         </motion.button>
         <h2 className="text-white font-black text-lg">الرحلات 🏍️</h2>
       </div>
-
+ 
       <AnimatePresence>
         {showCreate && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
@@ -1307,7 +1307,7 @@ function GroupsTab({ profile }) {
           </motion.div>
         )}
       </AnimatePresence>
-
+ 
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={28} className="text-orange-500" /></motion.div>
@@ -1338,7 +1338,7 @@ function GroupsTab({ profile }) {
                     )}
                   </div>
                 </div>
-
+ 
                 {/* الأعضاء */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center">
@@ -1356,7 +1356,7 @@ function GroupsTab({ profile }) {
                   </div>
                   <p className="text-gray-500 text-xs">{ride.member_count}/{ride.max_members} عضو</p>
                 </div>
-
+ 
                 {/* Buttons */}
                 <div className="flex gap-2">
                   <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSelectedRide(ride)}
@@ -1390,7 +1390,7 @@ function GroupsTab({ profile }) {
     </motion.div>
   );
 }
-
+ 
 /* ─── Profile Tab ─── */
 function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut }) {
   const stats = [
@@ -1457,7 +1457,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
             </div>
           ))}
         </div>
-
+ 
         {/* GPS Card */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
@@ -1483,7 +1483,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
             </motion.div>
           )}
         </div>
-
+ 
         {/* Settings */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
           {[{ icon: <Settings size={16} />, label: "إعدادات الحساب" }, { icon: <Bell size={16} />, label: "الإشعارات" }, { icon: <Star size={16} />, label: "الرحلات المفضلة" }].map((item, i, arr) => (
@@ -1511,7 +1511,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
     </motion.div>
   );
 }
-
+ 
 /* ════════════════════════════════════════
    ADMIN PANEL — مدمج في نفس الملف
 ════════════════════════════════════════ */
@@ -1529,7 +1529,7 @@ function AdminPanel({ session, onSignOut }) {
   const [adminProfile, setAdminProfile] = useState(null);
   const [pendingRides, setPendingRides] = useState([]);
   const [showRides, setShowRides] = useState(false);
-
+ 
   useEffect(() => {
     if (session) {
       supabase.from("profiles").select("*").eq("id", session.user.id).single()
@@ -1537,7 +1537,7 @@ function AdminPanel({ session, onSignOut }) {
       fetchAll();
     } else setLoading(false);
   }, [session]);
-
+ 
   const fetchAll = async () => {
     setLoading(true);
     const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
@@ -1557,9 +1557,9 @@ function AdminPanel({ session, onSignOut }) {
     if (codesData) setCodes(codesData);
     setLoading(false);
   };
-
-
-
+ 
+ 
+ 
   const generateCode = async () => {
     setGenerating(true);
     const code = "MOTO" + Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -1572,7 +1572,7 @@ function AdminPanel({ session, onSignOut }) {
     showToast(`🎟️ تم إنشاء كود: ${code}`, "success");
     setGenerating(false);
   };
-
+ 
   const approveRide = async (ride, approve) => {
     await supabase.from("rides")
       .update({ approved: approve, rejected: !approve })
@@ -1588,18 +1588,18 @@ function AdminPanel({ session, onSignOut }) {
     showToast(approve ? `✅ ${ride.name}` : `❌ ${ride.name}`, approve ? "success" : "error");
     await fetchAll();
   };
-
+ 
   const deleteCode = async (id) => {
     await supabase.from("invite_codes").delete().eq("id", id);
     setCodes(prev => prev.filter(c => c.id !== id));
     showToast("🗑️ تم حذف الكود", "info");
   };
-
+ 
   const updateStatus = async (id, newStatus, name) => {
     setActionId(id);
     const oldStatus = profiles.find(p => p.id === id)?.status;
     await supabase.from("profiles").update({ status: newStatus }).eq("id", id);
-
+ 
     // إرسال إشعار للمستخدم
     if (newStatus === "approved") {
       await supabase.from("notifications").insert({
@@ -1616,36 +1616,18 @@ function AdminPanel({ session, onSignOut }) {
         type: "rejection",
       });
     }
-
+ 
     setProfiles(prev => prev.map(p => p.id === id ? { ...p, status: newStatus } : p));
     setStats(prev => ({ ...prev, [oldStatus]: Math.max(0, prev[oldStatus] - 1), [newStatus]: prev[newStatus] + 1 }));
     showToast(newStatus === "approved" ? `✅ تمت الموافقة على ${name}` : newStatus === "banned" ? `🚫 تم حظر ${name}` : `⏳ تم إرجاع ${name}`, newStatus === "approved" ? "success" : newStatus === "banned" ? "error" : "info");
     setActionId(null);
   };
-
+ 
   const showToast = (msg, type) => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-
+ 
   const isAdmin = adminProfile?.role === "admin" || adminProfile?.role === "moderator";
   const filtered = profiles.filter(p => (filter === "all" || p.status === filter) && (p.full_name?.toLowerCase().includes(search.toLowerCase()) || p.bike_type?.toLowerCase().includes(search.toLowerCase())));
-
-  const approveRide = async (ride, approve) => {
-    await supabase.from("rides")
-      .update({ approved: approve, rejected: !approve })
-      .eq("id", ride.id);
-
-    await supabase.from("notifications").insert({
-      user_id: ride.leader_id,
-      title: approve ? "✅ تمت الموافقة على رحلتك!" : "❌ تم رفض رحلتك",
-      body: approve
-        ? `تمت الموافقة على رحلة "${ride.name}" وهي متاحة الآن للجميع!`
-        : `تم رفض رحلة "${ride.name}" من قبل المسؤول.`,
-      type: approve ? "approval" : "rejection",
-    });
-
-    showToast(approve ? `✅ تمت الموافقة على ${ride.name}` : `❌ تم رفض ${ride.name}`, approve ? "success" : "error");
-    await fetchAll();
-  };
-
+ 
   if (!session) return (
     <div className="h-[100dvh] bg-gray-950 flex items-center justify-center p-4">
       <div className="text-center">
@@ -1656,7 +1638,7 @@ function AdminPanel({ session, onSignOut }) {
       </div>
     </div>
   );
-
+ 
   if (!isAdmin && adminProfile) return (
     <div className="h-[100dvh] bg-gray-950 flex items-center justify-center p-4">
       <div className="text-center">
@@ -1667,7 +1649,7 @@ function AdminPanel({ session, onSignOut }) {
       </div>
     </div>
   );
-
+ 
   return (
     <div className="h-[100dvh] bg-gray-950 text-white flex flex-col overflow-hidden" dir="rtl">
       <AnimatePresence>
@@ -1678,7 +1660,7 @@ function AdminPanel({ session, onSignOut }) {
           </motion.div>
         )}
       </AnimatePresence>
-
+ 
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0 safe-top">
         <div className="flex items-center gap-3">
@@ -1710,7 +1692,7 @@ function AdminPanel({ session, onSignOut }) {
           <div className="w-9 h-9 bg-orange-500/20 border border-orange-500/40 rounded-xl flex items-center justify-center"><Crown size={18} className="text-orange-500" /></div>
         </div>
       </div>
-
+ 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="p-4 space-y-4 max-w-2xl mx-auto">
           {/* Stats */}
@@ -1732,14 +1714,14 @@ function AdminPanel({ session, onSignOut }) {
               );
             })}
           </div>
-
+ 
           {/* Search */}
           <div className="relative">
             <Search size={15} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث..."
               className="w-full bg-gray-900 border border-gray-800 text-white placeholder-gray-600 rounded-2xl py-3 pr-11 pl-4 text-sm focus:border-orange-500 focus:outline-none" />
           </div>
-
+ 
           {/* Rides Section */}
           {showRides && (
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
@@ -1767,7 +1749,7 @@ function AdminPanel({ session, onSignOut }) {
               ))}
             </div>
           )}
-
+ 
           {/* Codes Section */}
           {codesTab && (
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
@@ -1807,7 +1789,7 @@ function AdminPanel({ session, onSignOut }) {
               )}
             </div>
           )}
-
+ 
           {/* List */}
           {loading ? (
             <div className="text-center py-16">
