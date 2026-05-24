@@ -486,13 +486,25 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
         .eq("approved", true)
         .neq("status", "completed")
         .not("start_lat", "is", null);
-      if (data) setActiveRides(data);
+      if (data) {
+        // فلترة: أظهر فقط الرحلات التي لم تبدأ بعد أو بدأت منذ أقل من دقيقة
+        const now = new Date();
+        const filtered = data.filter(ride => {
+          if (!ride.start_date || !ride.start_time) return true;
+          const rideTime = new Date(`${ride.start_date}T${ride.start_time}`);
+          const diffMinutes = (now - rideTime) / 1000 / 60;
+          return diffMinutes < 1; // أخفِ بعد دقيقة من الموعد
+        });
+        setActiveRides(filtered);
+      }
     };
     fetchActiveRides();
+    // فحص كل دقيقة لإخفاء الرحلات المنتهية
+    const interval = setInterval(fetchActiveRides, 60000);
     const ch = supabase.channel("rides-map-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "rides" }, fetchActiveRides)
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { supabase.removeChannel(ch); clearInterval(interval); };
   }, []);
   // فحص كل 30 ثانية — إزالة الدراجين غير النشطين
   useEffect(() => {
@@ -1154,21 +1166,24 @@ function GroupsTab({ profile }) {
   const [startTime, setStartTime] = useState("");
   const [maxMembers, setMaxMembers] = useState(10);
   const [creating, setCreating] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [selectedRide, setSelectedRide] = useState(null);
   const [rideMessages, setRideMessages] = useState([]);
   const [msgInput, setMsgInput] = useState("");
   const [toast, setToast] = useState(null);
-  const [currentLat, setCurrentLat] = useState(null);
-  const [currentLng, setCurrentLng] = useState(null);
   const bottomRef = useRef(null);
 
-  // جلب موقعك الحالي
-  useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(pos => {
-      setCurrentLat(pos.coords.latitude);
-      setCurrentLng(pos.coords.longitude);
-    });
-  }, []);
+  // تحويل العنوان لإحداثيات
+  const geocodeAddress = async (address) => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      }
+    } catch (e) { console.error(e); }
+    return null;
+  };
 
   const showToast = (msg, type) => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -1215,25 +1230,46 @@ function GroupsTab({ profile }) {
       showToast("يرجى تعبئة جميع الحقول!", "error");
       return;
     }
+
+    // تحقق من أن التاريخ والوقت في المستقبل
+    const rideDateTime = new Date(`${startDate}T${startTime}`);
+    if (rideDateTime <= new Date()) {
+      showToast("⚠️ يجب أن يكون موعد الرحلة في المستقبل!", "error");
+      return;
+    }
+
     setCreating(true);
+    setGeocoding(true);
+
+    // تحويل العنوان لإحداثيات
+    const coords = await geocodeAddress(startLocation);
+    setGeocoding(false);
+
+    if (!coords) {
+      showToast("⚠️ تعذّر تحديد موقع العنوان، جرب عنواناً أوضح", "error");
+      setCreating(false);
+      return;
+    }
+
     const { data } = await supabase.from("rides").insert({
       name: rideName,
       leader_id: profile.id,
       leader_name: profile.full_name,
       max_members: maxMembers,
-      start_location_name: startLocation || null,
-      start_date: startDate || null,
-      start_time: startTime || null,
-      start_lat: currentLat || null,
-      start_lng: currentLng || null,
+      start_location_name: startLocation,
+      start_date: startDate,
+      start_time: startTime,
+      start_lat: coords.lat,
+      start_lng: coords.lng,
       approved: false,
     }).select().single();
+
     if (data) {
       await supabase.from("ride_members").insert({
         ride_id: data.id, profile_id: profile.id, profile_name: profile.full_name,
       });
       showToast("✅ تم إرسال الرحلة للمراجعة!", "success");
-      setRideName(""); setStartLocation(""); setShowCreate(false);
+      setRideName(""); setStartLocation(""); setStartDate(""); setStartTime(""); setShowCreate(false);
     }
     setCreating(false);
   };
@@ -1389,11 +1425,16 @@ function GroupsTab({ profile }) {
               <input value={rideName} onChange={e => setRideName(e.target.value)}
                 placeholder="اسم الرحلة..." dir="rtl"
                 className="w-full bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
-              <input value={startLocation} onChange={e => setStartLocation(e.target.value)}
-                placeholder="مكان الانطلاق (اختياري)..." dir="rtl"
-                className="w-full bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
+              <div className="relative">
+                <input value={startLocation} onChange={e => setStartLocation(e.target.value)}
+                  placeholder="عنوان مكان الانطلاق (مثال: برج خليفة، دبي)..." dir="rtl"
+                  className="w-full bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg">📍</span>
+              </div>
               <div className="flex gap-2">
-                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                <input type="date" value={startDate}
+                  min={new Date().toISOString().split("T")[0]}
+                  onChange={e => setStartDate(e.target.value)}
                   className="flex-1 bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
                 <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
                   className="flex-1 bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
@@ -1410,10 +1451,15 @@ function GroupsTab({ profile }) {
                 </div>
                 <p className="text-gray-500 text-xs">أقصى عدد</p>
               </div>
-              <p className="text-yellow-400 text-xs text-right">⚠️ ستظهر الرحلة بعد موافقة الأدمن</p>
+              <p className="text-yellow-400 text-xs text-right">⚠️ ستظهر الرحلة على الخريطة بعد موافقة الأدمن</p>
               <motion.button whileTap={{ scale: 0.97 }} onClick={createRide} disabled={creating || !rideName.trim()}
                 className="w-full bg-orange-500 text-white font-bold py-3 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
-                {creating ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={16} /></motion.div> : "🏍️ إرسال للمراجعة"}
+                {creating ? (
+                  <>
+                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={16} /></motion.div>
+                    {geocoding ? "جاري تحديد الموقع..." : "جاري الإنشاء..."}
+                  </>
+                ) : "🏍️ إرسال للمراجعة"}
               </motion.button>
             </div>
           </motion.div>
