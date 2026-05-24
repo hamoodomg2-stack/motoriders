@@ -1559,6 +1559,7 @@ function AdminPanel({ session, onSignOut }) {
   const [showRides, setShowRides] = useState(false);
   const [allRides, setAllRides] = useState([]);
   const [showAllRides, setShowAllRides] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
 
 
   useEffect(() => {
@@ -1701,7 +1702,6 @@ function AdminPanel({ session, onSignOut }) {
         )}
       </AnimatePresence>
 
-      {/* Header */}
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between shrink-0"
         style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
