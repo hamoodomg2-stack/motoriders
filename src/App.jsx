@@ -1557,6 +1557,8 @@ function AdminPanel({ session, onSignOut }) {
   const [adminProfile, setAdminProfile] = useState(null);
   const [pendingRides, setPendingRides] = useState([]);
   const [showRides, setShowRides] = useState(false);
+  const [allRides, setAllRides] = useState([]);
+  const [showAllRides, setShowAllRides] = useState(false);
 
   useEffect(() => {
     if (session) {
@@ -1577,10 +1579,11 @@ function AdminPanel({ session, onSignOut }) {
     const { data: ridesData } = await supabase
       .from("rides")
       .select("*")
-      .eq("approved", false)
-      .eq("rejected", false)
       .order("created_at", { ascending: false });
-    if (ridesData) setPendingRides(ridesData);
+    if (ridesData) {
+      setPendingRides(ridesData.filter(r => !r.approved && !r.rejected));
+      setAllRides(ridesData.filter(r => r.approved || r.rejected));
+    }
     const { data: codesData } = await supabase.from("invite_codes").select("*").order("created_at", { ascending: false });
     if (codesData) setCodes(codesData);
     setLoading(false);
@@ -1614,6 +1617,14 @@ function AdminPanel({ session, onSignOut }) {
       type: approve ? "approval" : "rejection",
     });
     showToast(approve ? `✅ ${ride.name}` : `❌ ${ride.name}`, approve ? "success" : "error");
+    await fetchAll();
+  };
+
+  const deleteRide = async (id) => {
+    await supabase.from("ride_members").delete().eq("ride_id", id);
+    await supabase.from("ride_messages").delete().eq("ride_id", id);
+    await supabase.from("rides").delete().eq("id", id);
+    showToast("🗑️ تم حذف الرحلة", "info");
     await fetchAll();
   };
 
@@ -1711,6 +1722,10 @@ function AdminPanel({ session, onSignOut }) {
             <ArrowRight size={14} className="rotate-180" />
             رجوع للتطبيق
           </button>
+          <button onClick={() => setShowAllRides(!showAllRides)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${showAllRides ? "bg-blue-500 text-white border-blue-400" : "bg-gray-800 text-gray-400 border-gray-700"}`}>
+            📋 كل الرحلات
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <div className="text-right">
@@ -1762,6 +1777,7 @@ function AdminPanel({ session, onSignOut }) {
                     <p className="text-white font-bold text-sm">{ride.name}</p>
                     <p className="text-gray-400 text-xs">بقيادة {ride.leader_name}</p>
                     {ride.start_location_name && <p className="text-orange-400 text-xs">📍 {ride.start_location_name}</p>}
+                    {ride.start_date && <p className="text-blue-400 text-xs">🗓️ {new Date(ride.start_date).toLocaleDateString("ar")} {ride.start_time ? `⏰ ${ride.start_time.slice(0, 5)}` : ""}</p>}
                   </div>
                   <div className="flex gap-2">
                     <motion.button whileTap={{ scale: 0.95 }} onClick={() => approveRide(ride, false)}
@@ -1778,6 +1794,36 @@ function AdminPanel({ session, onSignOut }) {
             </div>
           )}
 
+
+          {/* All Rides Section */}
+          {showAllRides && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+              <p className="text-white font-bold text-right">كل الرحلات ({allRides.length})</p>
+              {allRides.length === 0 ? (
+                <p className="text-gray-600 text-sm text-center py-4">لا توجد رحلات</p>
+              ) : allRides.map(ride => (
+                <div key={ride.id} className="bg-gray-800 rounded-xl p-3">
+                  <div className="flex items-start justify-between mb-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${ride.approved ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+                      {ride.approved ? "✅ مقبولة" : "❌ مرفوضة"}
+                    </span>
+                    <div className="text-right">
+                      <p className="text-white font-bold text-sm">{ride.name}</p>
+                      <p className="text-gray-400 text-xs">بقيادة {ride.leader_name}</p>
+                      {ride.start_location_name && <p className="text-orange-400 text-xs">📍 {ride.start_location_name}</p>}
+                      {ride.start_date && <p className="text-blue-400 text-xs">🗓️ {new Date(ride.start_date).toLocaleDateString("ar")} {ride.start_time ? `⏰ ${ride.start_time.slice(0, 5)}` : ""}</p>}
+                    </div>
+                  </div>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => deleteRide(ride.id)}
+                    className="w-full bg-red-500/20 border border-red-500/40 text-red-400 font-bold py-2 rounded-xl text-xs">
+                    🗑️ حذف الرحلة
+                  </motion.button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          
           {/* Codes Section */}
           {codesTab && (
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
