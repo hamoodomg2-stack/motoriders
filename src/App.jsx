@@ -1123,7 +1123,10 @@ function GroupsTab({ profile }) {
   };
 
   const createRide = async () => {
-    if (!rideName.trim()) return;
+    if (!rideName.trim() || !startLocation.trim() || !startDate || !startTime) {
+      showToast("يرجى تعبئة جميع الحقول!", "error");
+      return;
+    }
     setCreating(true);
     const { data } = await supabase.from("rides").insert({
       name: rideName,
