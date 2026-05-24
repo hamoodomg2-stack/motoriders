@@ -679,7 +679,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} />}
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} />}
-          {activeTab === "groups" && <GroupsTab key="groups" />}
+          {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
@@ -1066,30 +1066,226 @@ const MOCK_GROUPS = [
   { id: 2, name: "دراجي الليل", members: 5, ride: "الرياض ring road", icon: "🌙" },
 ];
 
-function GroupsTab() {
+function GroupsTab({ profile }) {
+  const [rides, setRides] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [rideName, setRideName] = useState("");
+  const [maxMembers, setMaxMembers] = useState(10);
+  const [creating, setCreating] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type) => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
+
+  useEffect(() => {
+    fetchRides();
+    const ch = supabase.channel("rides-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "rides" }, fetchRides)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ride_members" }, fetchRides)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, []);
+
+  const fetchRides = async () => {
+    const { data } = await supabase
+      .from("rides")
+      .select("*, ride_members(profile_id, profile_name)")
+      .neq("status", "completed")
+      .order("created_at", { ascending: false });
+    if (data) setRides(data);
+    setLoading(false);
+  };
+
+  const createRide = async () => {
+    if (!rideName.trim()) return;
+    setCreating(true);
+    const { data } = await supabase.from("rides").insert({
+      name: rideName,
+      leader_id: profile.id,
+      leader_name: profile.full_name,
+      max_members: maxMembers,
+    }).select().single();
+    if (data) {
+      await supabase.from("ride_members").insert({
+        ride_id: data.id,
+        profile_id: profile.id,
+        profile_name: profile.full_name,
+      });
+      showToast("✅ تم إنشاء الرحلة!", "success");
+      setRideName("");
+      setShowCreate(false);
+    }
+    setCreating(false);
+  };
+
+  const joinRide = async (ride) => {
+    const isMember = ride.ride_members?.some(m => m.profile_id === profile.id);
+    if (isMember) {
+      await supabase.from("ride_members").delete()
+        .eq("ride_id", ride.id).eq("profile_id", profile.id);
+      await supabase.from("rides").update({ member_count: ride.member_count - 1 }).eq("id", ride.id);
+      showToast("غادرت الرحلة", "info");
+    } else {
+      await supabase.from("ride_members").insert({
+        ride_id: ride.id, profile_id: profile.id, profile_name: profile.full_name,
+      });
+      await supabase.from("rides").update({ member_count: ride.member_count + 1 }).eq("id", ride.id);
+      showToast("✅ انضممت للرحلة!", "success");
+    }
+  };
+
+  const startRide = async (ride) => {
+    await supabase.from("rides").update({
+      status: "active",
+      started_at: new Date().toISOString(),
+    }).eq("id", ride.id);
+    showToast("🏁 انطلقت الرحلة!", "success");
+  };
+
+  const endRide = async (ride) => {
+    await supabase.from("rides").update({
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    }).eq("id", ride.id);
+    showToast("🎉 انتهت الرحلة!", "success");
+  };
+
+  const statusColor = { waiting: "text-yellow-400 bg-yellow-500/20 border-yellow-500/30", active: "text-green-400 bg-green-500/20 border-green-500/30" };
+  const statusLabel = { waiting: "⏳ انتظار", active: "🏁 جارية" };
+
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
       className="absolute inset-0 overflow-y-auto p-4">
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl ${toast.type === "success" ? "bg-green-600" : toast.type === "error" ? "bg-red-600" : "bg-orange-500"
+              }`}>
+            {toast.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <motion.button whileTap={{ scale: 0.95 }} className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl">+ مجموعة</motion.button>
-        <h2 className="text-white font-black text-lg">المجموعات</h2>
+        <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(!showCreate)}
+          className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-orange-500/30">
+          {showCreate ? "✕ إلغاء" : "+ رحلة جديدة"}
+        </motion.button>
+        <h2 className="text-white font-black text-lg">الرحلات 🏍️</h2>
       </div>
-      <div className="space-y-3">
-        {MOCK_GROUPS.map((g, i) => (
-          <motion.div key={g.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
-            className="bg-gray-900 border border-gray-800 hover:border-orange-500/40 rounded-2xl p-4 transition-all">
-            <div className="flex items-center gap-3">
-              <ChevronRight size={16} className="text-gray-700" />
-              <div className="flex-1 text-right">
-                <p className="text-white font-bold text-sm">{g.name}</p>
-                <p className="text-gray-500 text-xs">{g.ride}</p>
-                <p className="text-orange-400 text-xs mt-1">{g.members} أعضاء</p>
+
+      {/* Create Form */}
+      <AnimatePresence>
+        {showCreate && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4">
+            <div className="bg-gray-900 border border-orange-500/30 rounded-2xl p-4 space-y-3">
+              <p className="text-white font-bold text-right">إنشاء رحلة جديدة</p>
+              <input value={rideName} onChange={e => setRideName(e.target.value)}
+                placeholder="اسم الرحلة..." dir="rtl"
+                className="w-full bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {[5, 10, 20, 50].map(n => (
+                    <button key={n} onClick={() => setMaxMembers(n)}
+                      className={`w-10 h-10 rounded-xl text-sm font-bold transition-all ${maxMembers === n ? "bg-orange-500 text-white" : "bg-gray-800 text-gray-400"}`}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-gray-500 text-xs">أقصى عدد</p>
               </div>
-              <div className="w-12 h-12 bg-gray-800 rounded-2xl flex items-center justify-center text-2xl">{g.icon}</div>
+              <motion.button whileTap={{ scale: 0.97 }} onClick={createRide} disabled={creating || !rideName.trim()}
+                className="w-full bg-orange-500 text-white font-bold py-3 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
+                {creating ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={16} /></motion.div> : "🏍️ إنشاء الرحلة"}
+              </motion.button>
             </div>
           </motion.div>
-        ))}
-      </div>
+        )}
+      </AnimatePresence>
+
+      {/* Rides List */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+            <Loader size={28} className="text-orange-500" />
+          </motion.div>
+        </div>
+      ) : rides.length === 0 ? (
+        <div className="text-center py-16 text-gray-600">
+          <span className="text-5xl block mb-3">🏍️</span>
+          <p className="text-sm">لا توجد رحلات نشطة</p>
+          <p className="text-xs mt-1">كن أول من ينشئ رحلة!</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {rides.map((ride, i) => {
+            const isMember = ride.ride_members?.some(m => m.profile_id === profile.id);
+            const isLeader = ride.leader_id === profile.id;
+            return (
+              <motion.div key={ride.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
+                className={`bg-gray-900 border rounded-2xl p-4 transition-all ${isMember ? "border-orange-500/40" : "border-gray-800"}`}>
+                <div className="flex items-start justify-between mb-3">
+                  <span className={`text-xs px-2 py-1 rounded-full border font-bold ${statusColor[ride.status]}`}>
+                    {statusLabel[ride.status]}
+                  </span>
+                  <div className="text-right">
+                    <p className="text-white font-black text-base">{ride.name}</p>
+                    <p className="text-gray-500 text-xs">بقيادة {ride.leader_name}</p>
+                  </div>
+                </div>
+
+                {/* Members */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-1">
+                    {ride.ride_members?.slice(0, 5).map((m, j) => (
+                      <div key={j} className="w-7 h-7 bg-gray-700 border-2 border-gray-900 rounded-full flex items-center justify-center text-xs -ml-1">
+                        🏍️
+                      </div>
+                    ))}
+                    {ride.ride_members?.length > 5 && (
+                      <div className="w-7 h-7 bg-gray-700 border-2 border-gray-900 rounded-full flex items-center justify-center text-[10px] text-gray-400 -ml-1">
+                        +{ride.ride_members.length - 5}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-gray-500 text-xs text-right">
+                    {ride.member_count}/{ride.max_members} عضو
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  {isLeader && ride.status === "waiting" && (
+                    <motion.button whileTap={{ scale: 0.95 }} onClick={() => startRide(ride)}
+                      className="flex-1 bg-green-500/20 border border-green-500/40 text-green-400 font-bold py-2 rounded-xl text-sm">
+                      🏁 ابدأ
+                    </motion.button>
+                  )}
+                  {isLeader && ride.status === "active" && (
+                    <motion.button whileTap={{ scale: 0.95 }} onClick={() => endRide(ride)}
+                      className="flex-1 bg-red-500/20 border border-red-500/40 text-red-400 font-bold py-2 rounded-xl text-sm">
+                      🏆 أنهِ
+                    </motion.button>
+                  )}
+                  {!isLeader && (
+                    <motion.button whileTap={{ scale: 0.95 }} onClick={() => joinRide(ride)}
+                      className={`flex-1 font-bold py-2 rounded-xl text-sm transition-all ${isMember
+                          ? "bg-gray-700 text-gray-400 border border-gray-600"
+                          : "bg-orange-500 text-white shadow-lg shadow-orange-500/30"
+                        }`}>
+                      {isMember ? "غادر الرحلة" : "انضم 🏍️"}
+                    </motion.button>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
     </motion.div>
   );
 }
