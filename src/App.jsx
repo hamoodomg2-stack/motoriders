@@ -475,6 +475,25 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [connected, setConnected] = useState(false);
   const [tracking, setTracking] = useState(false);
   const [stealth, setStealth] = useState(false);
+  const [activeRides, setActiveRides] = useState([]);
+
+  // جلب الرحلات النشطة للخريطة
+  useEffect(() => {
+    const fetchActiveRides = async () => {
+      const { data } = await supabase
+        .from("rides")
+        .select("*")
+        .eq("approved", true)
+        .neq("status", "completed")
+        .not("start_lat", "is", null);
+      if (data) setActiveRides(data);
+    };
+    fetchActiveRides();
+    const ch = supabase.channel("rides-map-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "rides" }, fetchActiveRides)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, []);
   // فحص كل 30 ثانية — إزالة الدراجين غير النشطين
   useEffect(() => {
     const interval = setInterval(() => {
@@ -693,7 +712,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
-          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} />}
+          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} />}
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} />}
           {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
@@ -737,7 +756,7 @@ function MapCentre({ loc }) {
   return null;
 }
 
-function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS }) {
+function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [] }) {
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -773,6 +792,39 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       className: "",
     });
   };
+
+  // أيقونة مكان انطلاق الرحلة
+  const createRideStartIcon = (rideName) => L.divIcon({
+    html: `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+        <div style="
+          background:linear-gradient(135deg,#f97316,#ea580c);
+          border:3px solid #fb923c;
+          border-radius:50% 50% 50% 0;
+          width:44px;height:44px;
+          transform:rotate(-45deg);
+          box-shadow:0 0 20px #f9731666;
+          display:flex;align-items:center;justify-content:center;
+        ">
+          <span style="transform:rotate(45deg);font-size:20px;">🏍️</span>
+        </div>
+        <div style="
+          background:rgba(5,5,5,0.93);
+          border:1px solid #f9731677;
+          border-radius:8px;
+          padding:2px 8px;
+          white-space:nowrap;
+          max-width:100px;
+          overflow:hidden;
+          text-overflow:ellipsis;
+        ">
+          <div style="color:#f97316;font-size:10px;font-weight:700;">🚩 ${rideName}</div>
+        </div>
+      </div>`,
+    iconSize: [44, 80],
+    iconAnchor: [22, 80],
+    className: "",
+  });
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
@@ -925,6 +977,15 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
                 }
               }
             }} />
+        ))}
+
+        {/* مواقع انطلاق الرحلات */}
+        {activeRides.filter(r => r.start_lat && r.start_lng).map(ride => (
+          <Marker key={`ride-${ride.id}`}
+            position={[ride.start_lat, ride.start_lng]}
+            icon={createRideStartIcon(ride.name)}
+            eventHandlers={{ click: () => alert(`🏍️ ${ride.name}\n📍 ${ride.start_location_name || ""}\n🗓️ ${ride.start_date || ""} ⏰ ${ride.start_time?.slice(0,5) || ""}\n👥 ${ride.member_count} عضو`) }}
+          />
         ))}
 
         {loc && <MapCentre loc={loc} />}
@@ -1097,7 +1158,17 @@ function GroupsTab({ profile }) {
   const [rideMessages, setRideMessages] = useState([]);
   const [msgInput, setMsgInput] = useState("");
   const [toast, setToast] = useState(null);
+  const [currentLat, setCurrentLat] = useState(null);
+  const [currentLng, setCurrentLng] = useState(null);
   const bottomRef = useRef(null);
+
+  // جلب موقعك الحالي
+  useEffect(() => {
+    navigator.geolocation?.getCurrentPosition(pos => {
+      setCurrentLat(pos.coords.latitude);
+      setCurrentLng(pos.coords.longitude);
+    });
+  }, []);
 
   const showToast = (msg, type) => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -1153,6 +1224,8 @@ function GroupsTab({ profile }) {
       start_location_name: startLocation || null,
       start_date: startDate || null,
       start_time: startTime || null,
+      start_lat: currentLat || null,
+      start_lng: currentLng || null,
       approved: false,
     }).select().single();
     if (data) {
