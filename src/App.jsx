@@ -1272,8 +1272,16 @@ function GroupsTab({ profile }) {
       </AnimatePresence>
 
       <div className="flex items-center justify-between mb-4">
-        <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(!showCreate)}
-          className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-orange-500/30">
+        <motion.button whileTap={{ scale: 0.95 }} onClick={() => {
+          if (showCreate) {
+            setRideName("");
+            setStartLocation("");
+            setStartDate("");
+            setStartTime("");
+            setMaxMembers(10);
+          }
+          setShowCreate(!showCreate);
+        }} className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-orange-500/30">
           {showCreate ? "✕ إلغاء" : "+ رحلة جديدة"}
         </motion.button>
         <h2 className="text-white font-black text-lg">الرحلات 🏍️</h2>
