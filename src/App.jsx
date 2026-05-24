@@ -644,7 +644,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
-            className="overflow-hidden shrink-0 bg-gray-900 border-b border-gray-700"
+            className="overflow-hidden shrink-0 bg-gray-900 border-b border-gray-700 w-full"
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
               <div className="flex items-center gap-2">
@@ -669,15 +669,15 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
                 <motion.div key={n.id}
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className={`px-4 py-3 border-b border-gray-800/50 text-right ${!n.is_read ? "bg-orange-500/5" : ""}`}>
-                  <div className="flex items-start justify-end gap-2">
+                  className={`px-4 py-3 border-b border-gray-800/50 ${!n.is_read ? "bg-orange-500/5" : ""}`}>
+                  <div className="flex items-start gap-2 flex-row-reverse">
                     {!n.is_read && (
                       <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.5, repeat: Infinity }}
                         className="w-2 h-2 bg-orange-500 rounded-full mt-1.5 shrink-0" />
                     )}
-                    <div>
-                      <p className="text-white text-sm font-semibold">{n.title}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{n.body}</p>
+                    <div className="flex-1 text-right">
+                      <p className="text-white text-sm font-bold">{n.title}</p>
+                      <p className="text-gray-400 text-xs mt-0.5 leading-relaxed">{n.body}</p>
                       <p className="text-gray-600 text-[10px] mt-1">
                         {new Date(n.created_at).toLocaleDateString("ar")}
                       </p>
