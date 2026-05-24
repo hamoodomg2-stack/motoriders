@@ -492,6 +492,23 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [unreadNotif, setUnreadNotif] = useState(0);
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
 
+  // جلب الإشعارات عند التحميل
+  useEffect(() => {
+    const fetchNotifs = async () => {
+      const { data } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", profile.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (data) {
+        setNotifications(data);
+        setUnreadNotif(data.filter(n => !n.is_read).length);
+      }
+    };
+    fetchNotifs();
+  }, [profile.id]);
+
 
   // Realtime إشعارات
   useEffect(() => {
