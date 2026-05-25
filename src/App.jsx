@@ -1398,10 +1398,7 @@ function LeaderboardTab({ profile }) {
 }
 
 
-  { id: 1, sender: "أحمد", text: "الطريق واضح 🟢", time: "14:32", mine: false },
-  { id: 2, sender: "محمد", text: "كاميرا على الحلقة! ⚠️", time: "14:35", mine: false },
-  { id: 3, sender: "أنت", text: "شكراً 👍", time: "14:36", mine: true },
-];
+
 
 function ChatTab({ profile }) {
   const [msgs, setMsgs] = useState([]);
@@ -1509,10 +1506,6 @@ function ChatTab({ profile }) {
 }
 
 /* ─── Groups Tab ─── */
-const MOCK_GROUPS = [
-  { id: 1, name: "فريق الصقور", members: 8, ride: "جدة → مكة", icon: "🦅" },
-  { id: 2, name: "دراجي الليل", members: 5, ride: "الرياض ring road", icon: "🌙" },
-];
 
 function GroupsTab({ profile }) {
   const [rides, setRides] = useState([]);
