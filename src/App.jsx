@@ -5,7 +5,7 @@ import {
   Clock, Navigation, CheckCircle, XCircle, Bell,
   Settings, ChevronRight, Star, Wifi, WifiOff, Eye, EyeOff,
   Lock, Mail, Hash, ArrowRight, Loader, Ban, RefreshCw,
-  UserCheck, UserX, Crown, Search, Trophy, Zap, Award, TrendingUp
+  UserCheck, UserX, Crown, Search, BellOff, BellRing
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
@@ -15,6 +15,76 @@ import L from "leaflet";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://hygfxmdsadiityhgifsz.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Z2Z4bWRzYWRpaXR5aGdpZnN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzY2MzUsImV4cCI6MjA5NDcxMjYzNX0.7tRlIaDyfgjZR4kJNHdIvfrcIwf-_cr5BQWjF3v7xgg";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ─── Push Notifications ─── */
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY ||
+  "BCzxpe1MMf3SffJ2uA2Akc8lTABbWBslnqkCYUCj3vORXp_R1Vt-2zDGtmwx4xyHe1WVak7dSCwqAFC8uwAkfg4";
+
+function urlBase64ToUint8Array(b64) {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const base64 = (b64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from([...atob(base64)].map(c => c.charCodeAt(0)));
+}
+
+async function registerSW() {
+  if (!("serviceWorker" in navigator)) return null;
+  try { return await navigator.serviceWorker.register("/sw.js", { scope: "/" }); }
+  catch { return null; }
+}
+
+async function subscribePush(userId) {
+  if (!("Notification" in window) || !("PushManager" in window))
+    return { ok: false, reason: "غير مدعوم" };
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") return { ok: false, reason: "تم رفض الإذن" };
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+    const { endpoint, keys } = sub.toJSON();
+    const { error } = await supabase.from("push_subscriptions").upsert(
+      { user_id: userId, endpoint, p256dh: keys.p256dh, auth: keys.auth,
+        user_agent: navigator.userAgent.slice(0, 200), updated_at: new Date().toISOString() },
+      { onConflict: "endpoint" }
+    );
+    if (error) throw error;
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+async function unsubscribePush(userId) {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await sub.unsubscribe();
+      await supabase.from("push_subscriptions").delete()
+        .eq("user_id", userId).eq("endpoint", sub.endpoint);
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+async function getPushStatus() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    return sub ? "subscribed" : "not_subscribed";
+  } catch { return "not_subscribed"; }
+}
+
+// إرسال Push لمستخدم (يُستدعى من أماكن مختلفة في التطبيق)
+async function sendPushToUser({ userId, title, message, url = "/", tag = "motoriders" }) {
+  try {
+    await supabase.functions.invoke("send-push", {
+      body: { user_id: userId, title, message, url, tag },
+    });
+  } catch (e) { console.warn("sendPush:", e); }
+}
 
 const VALID_INVITE_CODES = ["MOTO2024", "RIDER001", "SPEED99", "BIKER42"];
 
@@ -29,80 +99,7 @@ const ALERT_TYPES = [
   { id: "other", label: "أخرى", icon: "⚠️" },
 ];
 
-/* ─── Gamification ─── */
-const XP_REWARDS = {
-  per_km: 10,           // كل كيلومتر
-  ride_complete: 50,    // إكمال رحلة جماعية
-  new_top_speed: 25,    // سجل سرعة جديد
-  join_ride: 15,        // الانضمام لرحلة
-  first_ride: 100,      // أول رحلة
-};
-
-const LEVELS = [
-  { min: 0,    max: 199,   name: "مبتدئ",    icon: "🔰", color: "#6b7280" },
-  { min: 200,  max: 499,   name: "متحرك",    icon: "🏍️", color: "#3b82f6" },
-  { min: 500,  max: 999,   name: "سريع",     icon: "⚡", color: "#8b5cf6" },
-  { min: 1000, max: 2499,  name: "محترف",    icon: "🔥", color: "#f97316" },
-  { min: 2500, max: 4999,  name: "نخبة",     icon: "💎", color: "#06b6d4" },
-  { min: 5000, max: Infinity, name: "أسطورة", icon: "👑", color: "#f59e0b" },
-];
-
-const BADGES_DEF = [
-  { id: "first_ride",    icon: "🏁", label: "أول رحلة",         desc: "أكملت رحلتك الأولى" },
-  { id: "speed_100",     icon: "💨", label: "100 كم/س",          desc: "تجاوزت 100 كم/س" },
-  { id: "speed_150",     icon: "🚀", label: "150 كم/س",          desc: "تجاوزت 150 كم/س" },
-  { id: "dist_100",      icon: "📍", label: "100 كم",            desc: "قطعت 100 كيلومتر" },
-  { id: "dist_500",      icon: "🗺️", label: "500 كم",            desc: "قطعت 500 كيلومتر" },
-  { id: "rides_5",       icon: "🔥", label: "5 رحلات",           desc: "شاركت في 5 رحلات" },
-  { id: "rides_20",      icon: "🏆", label: "20 رحلة",           desc: "شاركت في 20 رحلة" },
-  { id: "early_bird",    icon: "🌅", label: "الطائر المبكر",    desc: "انضممت لرحلة فجرية" },
-  { id: "night_rider",   icon: "🌙", label: "فارس الليل",       desc: "ركبت بعد منتصف الليل" },
-];
-
-function getLevel(xp) {
-  return LEVELS.find(l => xp >= l.min && xp <= l.max) || LEVELS[0];
-}
-
-function getLevelProgress(xp) {
-  const lvl = getLevel(xp);
-  if (lvl.max === Infinity) return 100;
-  const range = lvl.max - lvl.min;
-  return Math.round(((xp - lvl.min) / range) * 100);
-}
-
-async function awardXP(profileId, amount, reason) {
-  const { data: p } = await supabase
-    .from("profiles")
-    .select("xp, badges, top_speed, total_rides")
-    .eq("id", profileId)
-    .single();
-  if (!p) return;
-
-  const newXp = (p.xp || 0) + amount;
-  const existingBadges = p.badges || [];
-  const newBadges = [...existingBadges];
-
-  // فحص الشارات
-  if (!existingBadges.includes("speed_100") && (p.top_speed || 0) >= 100) newBadges.push("speed_100");
-  if (!existingBadges.includes("speed_150") && (p.top_speed || 0) >= 150) newBadges.push("speed_150");
-  if (!existingBadges.includes("dist_100") && (p.total_distance || 0) >= 100) newBadges.push("dist_100");
-  if (!existingBadges.includes("dist_500") && (p.total_distance || 0) >= 500) newBadges.push("dist_500");
-  if (!existingBadges.includes("rides_5") && (p.total_rides || 0) >= 5) newBadges.push("rides_5");
-  if (!existingBadges.includes("rides_20") && (p.total_rides || 0) >= 20) newBadges.push("rides_20");
-  if (!existingBadges.includes("first_ride") && (p.total_rides || 0) >= 1) newBadges.push("first_ride");
-
-  await supabase.from("profiles").update({ xp: newXp, badges: newBadges }).eq("id", profileId);
-
-  // إشعار بالـ XP
-  if (reason) {
-    await supabase.from("notifications").insert({
-      user_id: profileId,
-      title: `⭐ +${amount} XP`,
-      body: reason,
-      type: "xp",
-    });
-  }
-}
+/* ─── حساب المسافة بين نقطتين (متر) ─── */
 function getDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -252,25 +249,14 @@ function useGPS(profileId, stealth) {
     );
   }, [profileId, stealth]);
 
-  const distanceRef = useRef(0); // متر مقطوعة في الجلسة
-  const sessionTopSpeedRef = useRef(0);
-
   const start = useCallback(() => {
     if (!navigator.geolocation) { setError("GPS غير مدعوم"); setStatus("error"); return; }
     setStatus("searching");
-    distanceRef.current = 0;
-    sessionTopSpeedRef.current = 0;
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lng, speed: spd } = pos.coords;
         const kmh = spd ? Math.round(spd * 3.6) : 0;
         setLoc({ lat, lng }); setSpeed(kmh); setStatus("active"); setError(null);
-        // حساب المسافة
-        if (lastRef.current) {
-          const d = getDistance(lastRef.current.lat, lastRef.current.lng, lat, lng);
-          if (d < 500) distanceRef.current += d;
-        }
-        if (kmh > sessionTopSpeedRef.current) sessionTopSpeedRef.current = kmh;
         lastRef.current = { lat, lng, speed: kmh };
       },
       (err) => {
@@ -288,30 +274,11 @@ function useGPS(profileId, stealth) {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
     setStatus("idle");
-
-    // منح XP عن المسافة المقطوعة + السرعة
-    if (profileId && distanceRef.current > 100) {
-      const km = distanceRef.current / 1000;
-      const xpEarned = Math.round(km * XP_REWARDS.per_km);
-      const { data: p } = await supabase.from("profiles").select("top_speed").eq("id", profileId).single();
-      const isNewRecord = p && sessionTopSpeedRef.current > (p.top_speed || 0);
-      const totalXp = xpEarned + (isNewRecord ? XP_REWARDS.new_top_speed : 0);
-      if (totalXp > 0) {
-        await awardXP(profileId, totalXp,
-          isNewRecord
-            ? `ركبت ${km.toFixed(1)} كم وسجّلت سرعة قياسية جديدة ${sessionTopSpeedRef.current} كم/س 🚀`
-            : `ركبت ${km.toFixed(1)} كم في هذه الجلسة 🏍️`
-        );
-      }
-      // تحديث top_speed إذا كان أعلى
-      if (isNewRecord) {
-        await supabase.from("profiles").update({ top_speed: sessionTopSpeedRef.current }).eq("id", profileId);
-      }
-    }
-
     // احذف الموقع نهائياً عند الإيقاف
     if (profileId) {
-      await supabase.from("locations").delete().eq("profile_id", profileId);
+      await supabase.from("locations")
+        .delete()
+        .eq("profile_id", profileId);
     }
   }, [profileId]);
 
@@ -349,6 +316,9 @@ export default function App() {
   const isAdmin = window.location.pathname === "/admin";
 
   useEffect(() => {
+    // تسجيل Service Worker فور تحميل التطبيق
+    registerSW();
+
     const t = setTimeout(() => setLoading(false), 5000);
     supabase.auth.getSession().then(({ data: { session } }) => {
       clearTimeout(t);
@@ -723,7 +693,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     { id: "map", icon: Map, label: "الخريطة" },
     { id: "riders", icon: Users, label: "سائقون" },
     { id: "chat", icon: MessageCircle, label: "دردشة" },
-    { id: "leaderboard", icon: Trophy, label: "تصنيف" },
+    { id: "groups", icon: Shield, label: "مجموعات" },
     { id: "profile", icon: User, label: "بروفايل" },
   ];
 
@@ -830,7 +800,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} />}
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} />}
-          {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} />}
+          {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
@@ -1141,264 +1111,12 @@ function RidersTab({ riders }) {
   );
 }
 
-/* ─── Leaderboard Tab ─── */
-function LeaderboardTab({ profile }) {
-  const [riders, setRiders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState("xp"); // xp | speed | distance
-  const [myRank, setMyRank] = useState(null);
-
-  useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, full_name, bike_type, avatar_url, xp, top_speed, total_distance, total_rides, badges")
-        .eq("status", "approved")
-        .order("xp", { ascending: false })
-        .limit(50);
-      if (data) setRiders(data);
-      setLoading(false);
-    };
-    fetch();
-    // Realtime
-    const ch = supabase.channel("lb-rt")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, fetch)
-      .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, []);
-
-  const sorted = [...riders].sort((a, b) => {
-    if (category === "xp")       return (b.xp || 0) - (a.xp || 0);
-    if (category === "speed")    return (b.top_speed || 0) - (a.top_speed || 0);
-    if (category === "distance") return (b.total_distance || 0) - (a.total_distance || 0);
-    return 0;
-  });
-
-  useEffect(() => {
-    const idx = sorted.findIndex(r => r.id === profile.id);
-    setMyRank(idx >= 0 ? idx + 1 : null);
-  }, [sorted, profile.id]);
-
-  const categories = [
-    { id: "xp",       label: "XP",      icon: "⭐", unit: "نقطة" },
-    { id: "speed",    label: "سرعة",    icon: "⚡", unit: "كم/س" },
-    { id: "distance", label: "مسافة",   icon: "📍", unit: "كم" },
-  ];
-
-  const getValue = (r) => {
-    if (category === "xp")       return (r.xp || 0).toLocaleString("ar");
-    if (category === "speed")    return r.top_speed || 0;
-    if (category === "distance") return (r.total_distance || 0).toFixed(1);
-  };
-
-  const podiumColors = ["#f59e0b", "#9ca3af", "#cd7c2f"];
-  const podiumSizes  = ["w-20 h-20", "w-16 h-16", "w-14 h-14"];
-  const podiumY      = ["mt-0", "mt-6", "mt-10"];
-
-  const top3 = sorted.slice(0, 3);
-  const rest = sorted.slice(3);
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="absolute inset-0 overflow-y-auto bg-gray-950">
-
-      {/* Header */}
-      <div className="relative overflow-hidden bg-gradient-to-b from-yellow-900/30 to-gray-950 pt-6 pb-4 px-4">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(245,158,11,0.15),_transparent_70%)] pointer-events-none" />
-        <h2 className="text-white font-black text-xl text-center mb-1">
-          <span className="text-yellow-400">🏆</span> لوحة المتصدرين
-        </h2>
-        {myRank && (
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center text-gray-400 text-xs">
-            ترتيبك: <span className="text-yellow-400 font-black text-sm">#{myRank}</span>
-          </motion.p>
-        )}
-      </div>
-
-      {/* Category Selector */}
-      <div className="flex gap-2 px-4 mb-4">
-        {categories.map(c => (
-          <motion.button key={c.id} whileTap={{ scale: 0.93 }} onClick={() => setCategory(c.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-sm font-bold border transition-all ${category === c.id
-              ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-300"
-              : "bg-gray-900 border-gray-800 text-gray-500"}`}>
-            <span>{c.icon}</span>{c.label}
-          </motion.button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-            <Loader size={28} className="text-yellow-500" />
-          </motion.div>
-        </div>
-      ) : (
-        <div className="px-4 space-y-3">
-          {/* Podium — Top 3 */}
-          {top3.length >= 2 && (
-            <div className="flex items-end justify-center gap-3 mb-6 pt-2">
-              {[top3[1], top3[0], top3[2]].filter(Boolean).map((r, podiumPos) => {
-                const realPos = podiumPos === 0 ? 1 : podiumPos === 1 ? 0 : 2;
-                const rank = realPos + 1;
-                const lvl = getLevel(r.xp || 0);
-                const isMe = r.id === profile.id;
-                return (
-                  <motion.div key={r.id}
-                    initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: podiumPos * 0.1 }}
-                    className={`flex flex-col items-center ${podiumY[realPos]}`}>
-                    {/* Crown for #1 */}
-                    {rank === 1 && (
-                      <motion.div animate={{ y: [0, -4, 0] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                        <Crown size={20} className="text-yellow-400 mb-1" />
-                      </motion.div>
-                    )}
-                    {/* Avatar */}
-                    <div className={`${podiumSizes[realPos]} rounded-3xl overflow-hidden border-4 mb-2 shadow-lg`}
-                      style={{ borderColor: podiumColors[realPos], boxShadow: `0 0 20px ${podiumColors[realPos]}55` }}>
-                      {r.avatar_url
-                        ? <img src={r.avatar_url} className="w-full h-full object-cover" />
-                        : <div className="w-full h-full bg-gray-800 flex items-center justify-center text-2xl">🏍️</div>}
-                    </div>
-                    {/* Rank badge */}
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black mb-1"
-                      style={{ background: podiumColors[realPos] }}>
-                      {rank}
-                    </div>
-                    <p className="text-white font-bold text-xs text-center max-w-[72px] truncate">{r.full_name}</p>
-                    <p className="font-black text-xs" style={{ color: podiumColors[realPos] }}>
-                      {getValue(r)} {categories.find(c => c.id === category)?.unit}
-                    </p>
-                    <p className="text-gray-600 text-[9px]">{lvl.icon} {lvl.name}</p>
-                    {isMe && <span className="text-[9px] bg-orange-500/30 text-orange-400 px-1.5 py-0.5 rounded-full mt-0.5">أنت</span>}
-                  </motion.div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Rest of the list */}
-          {rest.map((r, i) => {
-            const rank = i + 4;
-            const lvl = getLevel(r.xp || 0);
-            const isMe = r.id === profile.id;
-            const badges = (r.badges || []).slice(0, 3);
-            return (
-              <motion.div key={r.id}
-                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.04 }}
-                className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isMe
-                  ? "bg-orange-500/10 border-orange-500/40"
-                  : "bg-gray-900 border-gray-800"}`}>
-                {/* Rank */}
-                <div className="w-8 text-center shrink-0">
-                  <span className="text-gray-500 font-black text-sm">#{rank}</span>
-                </div>
-                {/* Avatar */}
-                <div className="w-10 h-10 rounded-2xl overflow-hidden border border-gray-700 shrink-0">
-                  {r.avatar_url
-                    ? <img src={r.avatar_url} className="w-full h-full object-cover" />
-                    : <div className="w-full h-full bg-gray-800 flex items-center justify-center">🏍️</div>}
-                </div>
-                {/* Info */}
-                <div className="flex-1 text-right min-w-0">
-                  <div className="flex items-center justify-end gap-1.5 mb-0.5">
-                    {isMe && <span className="text-[9px] bg-orange-500/30 text-orange-400 px-1.5 py-0.5 rounded-full">أنت</span>}
-                    <p className="text-white font-bold text-sm truncate">{r.full_name}</p>
-                  </div>
-                  <div className="flex items-center justify-end gap-1">
-                    <span className="text-gray-600 text-[10px]">{lvl.icon} {lvl.name}</span>
-                    {badges.map(b => {
-                      const def = BADGES_DEF.find(x => x.id === b);
-                      return def ? <span key={b} title={def.label} className="text-xs">{def.icon}</span> : null;
-                    })}
-                  </div>
-                </div>
-                {/* Value */}
-                <div className="text-right shrink-0">
-                  <p className="text-yellow-400 font-black text-base leading-none">{getValue(r)}</p>
-                  <p className="text-gray-600 text-[10px]">{categories.find(c => c.id === category)?.unit}</p>
-                </div>
-              </motion.div>
-            );
-          })}
-
-          {sorted.length === 0 && (
-            <div className="text-center py-16 text-gray-600">
-              <Trophy size={40} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">لا يوجد بيانات بعد</p>
-              <p className="text-xs mt-1">اركب وابدأ تتراكم النقاط! 🏍️</p>
-            </div>
-          )}
-
-          {/* My XP card at bottom if not visible */}
-          {(() => {
-            const me = sorted.find(r => r.id === profile.id);
-            if (!me) return null;
-            const lvl = getLevel(me.xp || 0);
-            const prog = getLevelProgress(me.xp || 0);
-            const nextLvl = LEVELS[LEVELS.indexOf(lvl) + 1];
-            return (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                className="mt-4 bg-gradient-to-r from-orange-900/30 to-yellow-900/20 border border-orange-500/30 rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">{lvl.icon}</span>
-                    <div>
-                      <p className="text-white font-black text-sm">{lvl.name}</p>
-                      <p className="text-gray-500 text-xs">{(me.xp || 0).toLocaleString("ar")} XP</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-gray-400 text-xs">مستواك</p>
-                    <p className="text-orange-400 font-black">#{myRank || "—"}</p>
-                  </div>
-                </div>
-                {/* Progress bar */}
-                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-                  <motion.div className="h-full rounded-full"
-                    style={{ background: `linear-gradient(90deg, ${lvl.color}, ${lvl.color}aa)` }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${prog}%` }}
-                    transition={{ duration: 1, ease: "easeOut" }} />
-                </div>
-                <div className="flex justify-between mt-1">
-                  <p className="text-gray-600 text-[10px]">{nextLvl ? `${nextLvl.name} →` : "المستوى الأعلى 👑"}</p>
-                  <p className="text-gray-600 text-[10px]">{prog}%</p>
-                </div>
-                {/* Badges */}
-                {(me.badges || []).length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-800">
-                    <p className="text-gray-500 text-xs text-right mb-2">شاراتك</p>
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      {(me.badges || []).map(b => {
-                        const def = BADGES_DEF.find(x => x.id === b);
-                        if (!def) return null;
-                        return (
-                          <motion.div key={b} initial={{ scale: 0 }} animate={{ scale: 1 }}
-                            title={def.desc}
-                            className="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-xl px-2 py-1">
-                            <span className="text-sm">{def.icon}</span>
-                            <span className="text-gray-300 text-xs">{def.label}</span>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            );
-          })()}
-          <div className="h-4" />
-        </div>
-      )}
-    </motion.div>
-  );
-}
-
-
-
+/* ─── Chat Tab ─── */
+const MOCK_MSGS = [
+  { id: 1, sender: "أحمد", text: "الطريق واضح 🟢", time: "14:32", mine: false },
+  { id: 2, sender: "محمد", text: "كاميرا على الحلقة! ⚠️", time: "14:35", mine: false },
+  { id: 3, sender: "أنت", text: "شكراً 👍", time: "14:36", mine: true },
+];
 
 function ChatTab({ profile }) {
   const [msgs, setMsgs] = useState([]);
@@ -1506,6 +1224,10 @@ function ChatTab({ profile }) {
 }
 
 /* ─── Groups Tab ─── */
+const MOCK_GROUPS = [
+  { id: 1, name: "فريق الصقور", members: 8, ride: "جدة → مكة", icon: "🦅" },
+  { id: 2, name: "دراجي الليل", members: 5, ride: "الرياض ring road", icon: "🌙" },
+];
 
 function GroupsTab({ profile }) {
   const [rides, setRides] = useState([]);
@@ -1634,37 +1356,42 @@ function GroupsTab({ profile }) {
     } else {
       await supabase.from("ride_members").insert({ ride_id: ride.id, profile_id: profile.id, profile_name: profile.full_name });
       await supabase.from("rides").update({ member_count: ride.member_count + 1 }).eq("id", ride.id);
-      // إشعار لصاحب الرحلة
+      // إشعار داخلي + Push لصاحب الرحلة
       await supabase.from("notifications").insert({
         user_id: ride.leader_id,
         title: `🏍️ ${profile.full_name} انضم لرحلتك!`,
         body: `انضم ${profile.full_name} إلى رحلة "${ride.name}"`,
         type: "info",
       });
-      // XP للانضمام
-      await awardXP(profile.id, XP_REWARDS.join_ride, `انضممت لرحلة "${ride.name}" 🏍️`);
+      await sendPushToUser({
+        userId: ride.leader_id,
+        title: `🏍️ ${profile.full_name} انضم لرحلتك!`,
+        message: `انضم ${profile.full_name} إلى رحلة "${ride.name}"`,
+        tag: "ride-join",
+      });
       showToast("✅ انضممت للرحلة!", "success");
     }
   };
 
   const startRide = async (ride) => {
     await supabase.from("rides").update({ status: "active", started_at: new Date().toISOString() }).eq("id", ride.id);
+    // Push لجميع الأعضاء
+    const members = ride.ride_members || [];
+    for (const m of members) {
+      if (m.profile_id === profile.id) continue; // لا ترسل لنفسك
+      await sendPushToUser({
+        userId: m.profile_id,
+        title: `🏁 رحلة "${ride.name}" انطلقت!`,
+        message: `القائد ${ride.leader_name} بدأ الرحلة — انضم الآن`,
+        tag: "ride-start",
+        url: "/",
+      });
+    }
     showToast("🏁 انطلقت الرحلة!", "success");
   };
 
   const endRide = async (ride) => {
     await supabase.from("rides").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", ride.id);
-    // XP لجميع الأعضاء
-    const members = ride.ride_members || [];
-    for (const m of members) {
-      const isFirst = (await supabase.from("rides")
-        .select("id", { count: "exact" })
-        .eq("status", "completed")
-        .contains("ride_members", [{ profile_id: m.profile_id }])
-      ).count === 0;
-      const xp = XP_REWARDS.ride_complete + (isFirst ? XP_REWARDS.first_ride : 0);
-      await awardXP(m.profile_id, xp, `أكملت رحلة "${ride.name}" 🎉`);
-    }
     showToast("🎉 انتهت الرحلة!", "success");
   };
 
@@ -1921,10 +1648,29 @@ function GroupsTab({ profile }) {
 
 /* ─── Profile Tab ─── */
 function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut }) {
+  const [pushStatus, setPushStatus] = useState("loading");
+  const [pushLoading, setPushLoading] = useState(false);
+
+  useEffect(() => {
+    getPushStatus().then(setPushStatus);
+  }, []);
+
+  const handlePushToggle = async () => {
+    setPushLoading(true);
+    if (pushStatus === "subscribed") {
+      await unsubscribePush(profile.id);
+      setPushStatus("not_subscribed");
+    } else {
+      const result = await subscribePush(profile.id);
+      setPushStatus(result.ok ? "subscribed" : pushStatus);
+    }
+    setPushLoading(false);
+  };
+
   const stats = [
     { label: "أعلى سرعة", value: `${profile?.top_speed || 0}`, unit: "كم/س", icon: "⚡" },
-    { label: "الرحلات", value: "0", unit: "رحلة", icon: "🗺️" },
-    { label: "المسافة", value: "0", unit: "كم", icon: "📍" },
+    { label: "الرحلات", value: `${profile?.total_rides || 0}`, unit: "رحلة", icon: "🗺️" },
+    { label: "المسافة", value: `${(profile?.total_distance || 0).toFixed(0)}`, unit: "كم", icon: "📍" },
   ];
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 overflow-y-auto">
@@ -2008,6 +1754,51 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
                 <div className="w-2 h-2 bg-orange-500 rounded-full" />
               </motion.div>
               <span className="text-orange-400 text-xs">موقعك يُرسل كل 5 ثواني</span>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Push Notifications Card */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+          <div className="flex items-center justify-between">
+            <motion.button whileTap={{ scale: 0.95 }} onClick={handlePushToggle}
+              disabled={pushLoading || pushStatus === "unsupported" || pushStatus === "denied" || pushStatus === "loading"}
+              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-50 ${
+                pushStatus === "subscribed"
+                  ? "bg-red-500/20 border border-red-500/40 text-red-400"
+                  : pushStatus === "denied" || pushStatus === "unsupported"
+                  ? "bg-gray-800 border border-gray-700 text-gray-500"
+                  : "bg-green-500/20 border border-green-500/40 text-green-400"
+              }`}>
+              {pushLoading
+                ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-block"><Loader size={14} /></motion.div>
+                : pushStatus === "subscribed" ? "إيقاف" : "تفعيل"}
+            </motion.button>
+            <div className="text-right">
+              <p className="text-gray-300 text-sm font-bold">إشعارات خارج التطبيق</p>
+              <p className={`text-xs mt-0.5 ${
+                pushStatus === "subscribed" ? "text-green-400"
+                : pushStatus === "denied" ? "text-red-400"
+                : pushStatus === "unsupported" ? "text-gray-600"
+                : "text-gray-500"}`}>
+                {pushStatus === "subscribed" ? "نشط — ستصلك إشعارات حتى لو التطبيق مغلق"
+                 : pushStatus === "denied" ? "مرفوض — اسمح من إعدادات المتصفح"
+                 : pushStatus === "unsupported" ? "غير مدعوم في هذا المتصفح"
+                 : pushStatus === "loading" ? "جاري الفحص..."
+                 : "متوقف"}
+              </p>
+            </div>
+            {pushStatus === "subscribed"
+              ? <BellRing size={20} className="text-green-500" />
+              : <BellOff size={20} className="text-gray-600" />}
+          </div>
+          {pushStatus === "subscribed" && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="mt-3 flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl p-2.5">
+              <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.5, repeat: Infinity }}>
+                <div className="w-2 h-2 bg-green-400 rounded-full" />
+              </motion.div>
+              <span className="text-green-400 text-xs">تلقّى إشعارات: موافقة حساب، رحلات، XP</span>
             </motion.div>
           )}
         </div>
@@ -2110,14 +1901,15 @@ function AdminPanel({ session, onSignOut }) {
     await supabase.from("rides")
       .update({ approved: approve, rejected: !approve })
       .eq("id", ride.id);
+    const notifTitle = approve ? "✅ تمت الموافقة على رحلتك!" : "❌ تم رفض رحلتك";
+    const notifBody = approve
+      ? `تمت الموافقة على رحلة "${ride.name}"!`
+      : `تم رفض رحلة "${ride.name}" من قبل المسؤول.`;
     await supabase.from("notifications").insert({
-      user_id: ride.leader_id,
-      title: approve ? "✅ تمت الموافقة على رحلتك!" : "❌ تم رفض رحلتك",
-      body: approve
-        ? `تمت الموافقة على رحلة "${ride.name}"!`
-        : `تم رفض رحلة "${ride.name}" من قبل المسؤول.`,
+      user_id: ride.leader_id, title: notifTitle, body: notifBody,
       type: approve ? "approval" : "rejection",
     });
+    await sendPushToUser({ userId: ride.leader_id, title: notifTitle, message: notifBody, tag: "ride-approval" });
     showToast(approve ? `✅ ${ride.name}` : `❌ ${ride.name}`, approve ? "success" : "error");
     await fetchAll();
   };
@@ -2141,7 +1933,7 @@ function AdminPanel({ session, onSignOut }) {
     const oldStatus = profiles.find(p => p.id === id)?.status;
     await supabase.from("profiles").update({ status: newStatus }).eq("id", id);
 
-    // إرسال إشعار للمستخدم
+    // إرسال إشعار داخلي + Push للمستخدم
     if (newStatus === "approved") {
       await supabase.from("notifications").insert({
         user_id: id,
@@ -2149,12 +1941,24 @@ function AdminPanel({ session, onSignOut }) {
         body: "مرحباً! تم قبول حسابك في MotoRiders. يمكنك الآن الوصول للخريطة.",
         type: "approval",
       });
+      await sendPushToUser({
+        userId: id,
+        title: "✅ تمت الموافقة على حسابك!",
+        message: "مرحباً! تم قبول حسابك في MotoRiders. يمكنك الآن الوصول للخريطة.",
+        tag: "account-approval",
+      });
     } else if (newStatus === "banned") {
       await supabase.from("notifications").insert({
         user_id: id,
         title: "🚫 تم تعليق حسابك",
         body: "تم تعليق حسابك من قبل المسؤول. تواصل معنا للمزيد.",
         type: "rejection",
+      });
+      await sendPushToUser({
+        userId: id,
+        title: "🚫 تم تعليق حسابك",
+        message: "تم تعليق حسابك من قبل المسؤول. تواصل معنا للمزيد.",
+        tag: "account-banned",
       });
     }
 
