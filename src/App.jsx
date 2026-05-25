@@ -162,31 +162,67 @@ function useGPS(profileId, stealth) {
   const [speed, setSpeed] = useState(0);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
+  // إحصائيات الجلسة الحالية
+  const [sessionStats, setSessionStats] = useState({ distance: 0, topSpeed: 0, duration: 0 });
   const watchRef = useRef(null);
   const intervalRef = useRef(null);
   const lastRef = useRef(null);
+  const sessionRef = useRef({ distanceM: 0, topSpeed: 0, startTime: null });
 
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
     await supabase.from("locations").upsert(
-      {
-        profile_id: profileId,
-        lat, lng,
-        speed: Math.round(spd * 3.6),
-        updated_at: new Date().toISOString()
-      },
+      { profile_id: profileId, lat, lng, speed: Math.round(spd * 3.6), updated_at: new Date().toISOString() },
       { onConflict: "profile_id" }
     );
   }, [profileId, stealth]);
 
+  // رفع الإحصائيات إلى profiles عند انتهاء الجلسة
+  const saveStats = useCallback(async () => {
+    if (!profileId) return;
+    const s = sessionRef.current;
+    if (!s.startTime || s.distanceM < 50) return; // تجاهل الجلسات القصيرة جداً
+
+    const durationMins = Math.round((Date.now() - s.startTime) / 60000);
+    const distanceKm = parseFloat((s.distanceM / 1000).toFixed(2));
+
+    const { data: current } = await supabase
+      .from("profiles")
+      .select("top_speed, total_distance, total_rides, total_riding_time")
+      .eq("id", profileId)
+      .single();
+
+    if (current) {
+      await supabase.from("profiles").update({
+        top_speed: Math.max(current.top_speed || 0, s.topSpeed),
+        total_distance: parseFloat(((current.total_distance || 0) + distanceKm).toFixed(2)),
+        total_rides: (current.total_rides || 0) + 1,
+        total_riding_time: (current.total_riding_time || 0) + durationMins,
+        last_ride_at: new Date().toISOString(),
+      }).eq("id", profileId);
+    }
+
+    // حفظ في state للعرض الفوري
+    setSessionStats({ distance: distanceKm, topSpeed: s.topSpeed, duration: durationMins });
+  }, [profileId]);
+
   const start = useCallback(() => {
     if (!navigator.geolocation) { setError("GPS غير مدعوم"); setStatus("error"); return; }
     setStatus("searching");
+    sessionRef.current = { distanceM: 0, topSpeed: 0, startTime: Date.now() };
+
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lng, speed: spd } = pos.coords;
         const kmh = spd ? Math.round(spd * 3.6) : 0;
         setLoc({ lat, lng }); setSpeed(kmh); setStatus("active"); setError(null);
+
+        // حساب المسافة من آخر نقطة (تجاهل القفزات > 500م)
+        if (lastRef.current) {
+          const d = getDistance(lastRef.current.lat, lastRef.current.lng, lat, lng);
+          if (d < 500) sessionRef.current.distanceM += d;
+        }
+        if (kmh > sessionRef.current.topSpeed) sessionRef.current.topSpeed = kmh;
         lastRef.current = { lat, lng, speed: kmh };
       },
       (err) => {
@@ -204,13 +240,10 @@ function useGPS(profileId, stealth) {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
     setStatus("idle");
-    // احذف الموقع نهائياً عند الإيقاف
-    if (profileId) {
-      await supabase.from("locations")
-        .delete()
-        .eq("profile_id", profileId);
-    }
-  }, [profileId]);
+    await saveStats();
+    if (profileId) await supabase.from("locations").delete().eq("profile_id", profileId);
+    lastRef.current = null;
+  }, [profileId, saveStats]);
 
   useEffect(() => () => {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
@@ -220,6 +253,7 @@ function useGPS(profileId, stealth) {
   useEffect(() => {
     const handleUnload = async () => {
       if (profileId) {
+        await saveStats();
         await supabase.from("locations").delete().eq("profile_id", profileId);
       }
     };
@@ -229,9 +263,9 @@ function useGPS(profileId, stealth) {
       window.removeEventListener("beforeunload", handleUnload);
       window.removeEventListener("pagehide", handleUnload);
     };
-  }, [profileId]);
+  }, [profileId, saveStats]);
 
-  return { loc, speed, status, error, start, stop };
+  return { loc, speed, status, error, start, stop, sessionStats };
 }
 
 /* ════════════════════════════════════════
@@ -521,7 +555,17 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadNotif, setUnreadNotif] = useState(0);
-  const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
+  const { loc, speed, status: gpsStatus, error: gpsError, start, stop, sessionStats } = useGPS(profile?.id, stealth);
+  // نسخة محلية من profile تتحدث بعد كل جلسة GPS
+  const [localProfile, setLocalProfile] = useState(profile);
+  useEffect(() => {
+    if (gpsStatus === "idle" && profile?.id) {
+      supabase.from("profiles").select("*").eq("id", profile.id).single()
+        .then(({ data }) => { if (data) setLocalProfile(data); });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gpsStatus]);
+  useEffect(() => { setLocalProfile(profile); }, [profile]);
 
   // جلب الإشعارات عند التحميل
   useEffect(() => {
@@ -728,7 +772,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} />}
           {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
-          {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
+          {activeTab === "profile" && <ProfileTab key="profile" profile={localProfile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} sessionStats={sessionStats} />}
         </AnimatePresence>
       </div>
 
@@ -1300,7 +1344,32 @@ function GroupsTab({ profile }) {
   };
 
   const endRide = async (ride) => {
-    await supabase.from("rides").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", ride.id);
+    const now = new Date().toISOString();
+    await supabase.from("rides").update({ status: "completed", completed_at: now }).eq("id", ride.id);
+
+    // تحديث إحصائيات جميع أعضاء الرحلة
+    const members = ride.ride_members || [];
+    if (members.length > 0) {
+      // حساب مدة الرحلة بالدقائق إذا كان started_at موجوداً
+      let rideDurationMinutes = 0;
+      if (ride.started_at) {
+        rideDurationMinutes = Math.round((Date.now() - new Date(ride.started_at).getTime()) / 60000);
+      }
+      for (const member of members) {
+        const { data: mp } = await supabase
+          .from("profiles")
+          .select("total_rides, total_riding_time")
+          .eq("id", member.profile_id)
+          .single();
+        if (mp) {
+          await supabase.from("profiles").update({
+            total_rides: (mp.total_rides || 0) + 1,
+            total_riding_time: (mp.total_riding_time || 0) + rideDurationMinutes,
+            last_ride_at: now,
+          }).eq("id", member.profile_id);
+        }
+      }
+    }
     showToast("🎉 انتهت الرحلة!", "success");
   };
 
@@ -1556,21 +1625,34 @@ function GroupsTab({ profile }) {
 }
 
 /* ─── Profile Tab ─── */
-function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut }) {
-  const stats = [
-    { label: "أعلى سرعة", value: `${profile?.top_speed || 0}`, unit: "كم/س", icon: "⚡" },
-    { label: "الرحلات", value: "0", unit: "رحلة", icon: "🗺️" },
-    { label: "المسافة", value: "0", unit: "كم", icon: "📍" },
-  ];
+function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut, sessionStats }) {
+  // تنسيق مدة الركوب
+  const formatDuration = (mins) => {
+    if (!mins) return "0 د";
+    if (mins < 60) return `${mins} د`;
+    return `${Math.floor(mins / 60)}س ${mins % 60}د`;
+  };
+
+  const totalDistance = profile?.total_distance || 0;
+  const totalRides    = profile?.total_rides || 0;
+  const topSpeed      = profile?.top_speed || 0;
+  const totalTime     = profile?.total_riding_time || 0;
+  const lastRide      = profile?.last_ride_at;
+  const avgSpeed      = totalTime > 0 ? Math.round((totalDistance / (totalTime / 60)) || 0) : 0;
+
+  const hasSession = sessionStats?.distance > 0 || sessionStats?.topSpeed > 0;
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 overflow-y-auto">
+
+      {/* Header */}
       <div className="relative bg-gradient-to-b from-orange-600/25 to-gray-950 pt-8 pb-6 px-4 text-center">
         <div className="relative inline-block mx-auto mb-3">
-          <div className="w-20 h-20 bg-gray-800 border-4 border-orange-500 rounded-3xl overflow-hidden shadow-xl shadow-orange-500/30">
+          <div className="w-24 h-24 bg-gray-800 border-4 border-orange-500 rounded-3xl overflow-hidden shadow-xl shadow-orange-500/30">
             {profile?.avatar_url ? (
               <img src={profile.avatar_url} alt="avatar" className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-4xl">🏍️</div>
+              <div className="w-full h-full flex items-center justify-center text-5xl">🏍️</div>
             )}
           </div>
           <label className="absolute -bottom-2 -right-2 w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center cursor-pointer shadow-lg hover:bg-orange-400 transition-all">
@@ -1579,48 +1661,154 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
               if (!file) return;
               const ext = file.name.split(".").pop();
               const path = `${profile.id}/avatar_${Date.now()}.${ext}`;
-              const { error: uploadError } = await supabase.storage
-                .from("avatars")
-                .upload(path, file, { upsert: true });
+              const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
               if (uploadError) { alert("خطأ في الرفع"); return; }
-              const { data: { publicUrl } } = supabase.storage
-                .from("avatars")
-                .getPublicUrl(path);
-              await supabase.from("profiles")
-                .update({ avatar_url: publicUrl })
-                .eq("id", profile.id);
-              // تحديث profile في قاعدة البيانات وإعادة جلبه
-              const { data: updatedProfile } = await supabase
-                .from("profiles")
-                .select("*")
-                .eq("id", profile.id)
-                .single();
-              if (updatedProfile) {
-                // تحديث الصورة في locations أيضاً
-                await supabase.from("locations")
-                  .update({ updated_at: new Date().toISOString() })
-                  .eq("profile_id", profile.id);
-              }
+              const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
+              await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", profile.id);
+              await supabase.from("locations").update({ updated_at: new Date().toISOString() }).eq("profile_id", profile.id);
               window.location.reload();
             }} />
             <span className="text-white text-sm">📷</span>
           </label>
         </div>
         <h2 className="text-white font-black text-xl">{profile?.full_name}</h2>
-        <p className="text-orange-400 text-sm">{profile?.bike_type}</p>
-        <span className="mt-2 inline-block bg-green-500/20 text-green-400 text-xs px-3 py-1 rounded-full border border-green-500/30">✓ حساب موثق</span>
-      </div>
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-3 gap-3">
-          {stats.map((s, i) => (
-            <div key={i} className="bg-gray-900 border border-gray-800 rounded-2xl p-3 text-center">
-              <div className="text-2xl mb-1">{s.icon}</div>
-              <p className="text-white font-black text-lg">{s.value}</p>
-              <p className="text-gray-500 text-xs">{s.unit}</p>
-              <p className="text-gray-600 text-[10px]">{s.label}</p>
-            </div>
-          ))}
+        <p className="text-orange-400 text-sm font-medium">{profile?.bike_type}</p>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <span className="bg-green-500/20 text-green-400 text-xs px-3 py-1 rounded-full border border-green-500/30">✓ حساب موثق</span>
+          {lastRide && (
+            <span className="bg-gray-800 text-gray-400 text-xs px-3 py-1 rounded-full border border-gray-700">
+              آخر ركوب: {new Date(lastRide).toLocaleDateString("ar")}
+            </span>
+          )}
         </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+
+        {/* بطاقة السرعة القصوى — الأبرز */}
+        <div className="relative bg-gray-900 border border-orange-500/30 rounded-3xl p-5 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent pointer-events-none" />
+          <div className="flex items-center justify-between">
+            <div className="text-left">
+              <motion.p
+                key={topSpeed}
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="text-5xl font-black text-orange-500 leading-none"
+              >
+                {topSpeed}
+              </motion.p>
+              <p className="text-orange-400/60 text-sm font-bold mt-1">كم/س</p>
+            </div>
+            <div className="text-right">
+              <p className="text-gray-400 text-xs mb-1">أعلى سرعة مسجّلة</p>
+              <div className="flex items-center justify-end gap-1 mb-3">
+                <span className="text-2xl">⚡</span>
+              </div>
+              {/* Speed bar visual */}
+              <div className="w-32 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-orange-600 to-orange-400 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, (topSpeed / 200) * 100)}%` }}
+                  transition={{ duration: 1, ease: "easeOut" }}
+                />
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-gray-700 text-[9px]">200</span>
+                <span className="text-gray-700 text-[9px]">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* شبكة الإحصائيات */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* المسافة الكلية */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xl">📍</span>
+              <div className="text-right">
+                <p className="text-gray-500 text-xs">إجمالي المسافة</p>
+              </div>
+            </div>
+            <p className="text-white font-black text-2xl text-right">{totalDistance >= 1000 ? `${(totalDistance/1000).toFixed(1)}k` : totalDistance.toFixed(1)}</p>
+            <p className="text-gray-500 text-xs text-right">كيلومتر</p>
+          </motion.div>
+
+          {/* عدد الرحلات */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+            className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xl">🏍️</span>
+              <div className="text-right">
+                <p className="text-gray-500 text-xs">عدد الجلسات</p>
+              </div>
+            </div>
+            <p className="text-white font-black text-2xl text-right">{totalRides}</p>
+            <p className="text-gray-500 text-xs text-right">جلسة ركوب</p>
+          </motion.div>
+
+          {/* وقت الركوب */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xl">⏱️</span>
+              <div className="text-right">
+                <p className="text-gray-500 text-xs">إجمالي الوقت</p>
+              </div>
+            </div>
+            <p className="text-white font-black text-2xl text-right">{formatDuration(totalTime)}</p>
+            <p className="text-gray-500 text-xs text-right">وقت الركوب</p>
+          </motion.div>
+
+          {/* متوسط السرعة */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+            className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xl">📊</span>
+              <div className="text-right">
+                <p className="text-gray-500 text-xs">متوسط السرعة</p>
+              </div>
+            </div>
+            <p className="text-white font-black text-2xl text-right">{avgSpeed}</p>
+            <p className="text-gray-500 text-xs text-right">كم/س</p>
+          </motion.div>
+        </div>
+
+        {/* بطاقة آخر جلسة — تظهر فقط بعد إيقاف GPS */}
+        <AnimatePresence>
+          {hasSession && (
+            <motion.div
+              initial={{ opacity: 0, y: 15, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-gradient-to-r from-green-900/30 to-emerald-900/20 border border-green-500/30 rounded-2xl p-4"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }}>
+                  <span className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded-full font-bold">✓ مكتملة</span>
+                </motion.div>
+                <p className="text-white font-bold text-sm">آخر جلسة 🏁</p>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-green-400 font-black text-xl">{sessionStats.distance.toFixed(1)}</p>
+                  <p className="text-gray-500 text-[10px]">كم</p>
+                </div>
+                <div>
+                  <p className="text-green-400 font-black text-xl">{sessionStats.topSpeed}</p>
+                  <p className="text-gray-500 text-[10px]">أعلى سرعة</p>
+                </div>
+                <div>
+                  <p className="text-green-400 font-black text-xl">{formatDuration(sessionStats.duration)}</p>
+                  <p className="text-gray-500 text-[10px]">المدة</p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* GPS Card */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
@@ -1643,7 +1831,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
               <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}>
                 <div className="w-2 h-2 bg-orange-500 rounded-full" />
               </motion.div>
-              <span className="text-orange-400 text-xs">موقعك يُرسل كل 5 ثواني</span>
+              <span className="text-orange-400 text-xs">موقعك يُرسل كل 10 ثواني — تتبع المسافة نشط</span>
             </motion.div>
           )}
         </div>
@@ -1659,6 +1847,7 @@ function ProfileTab({ profile, speed, gpsStatus, tracking, toggleGPS, onSignOut 
             </motion.button>
           ))}
         </div>
+
         {profile?.role === "admin" && (
           <motion.button whileTap={{ scale: 0.97 }}
             onClick={() => window.location.href = "/admin"}
