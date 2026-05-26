@@ -2014,6 +2014,203 @@ function GroupsTab({ profile }) {
   );
 }
 
+/* ─── Story Viewer — Snapchat Gestures ─── */
+function StoryViewer({ story, profile, onClose, onLike, photos, onNext }) {
+  const [paused, setPaused] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [dragY, setDragY] = useState(0);
+  const [closing, setClosing] = useState(false);
+  const holdTimer = useRef(null);
+  const progressRef = useRef(null);
+  const startTime = useRef(Date.now());
+  const elapsed = useRef(0);
+  const DURATION = 5000; // 5 ثواني
+
+  // تقدم الـ progress bar
+  useEffect(() => {
+    if (paused || closing) return;
+    const tick = () => {
+      const now = Date.now();
+      const delta = now - startTime.current;
+      elapsed.current += delta;
+      startTime.current = now;
+      const pct = Math.min((elapsed.current / DURATION) * 100, 100);
+      setProgress(pct);
+      if (pct >= 100) {
+        // انتقل للصورة التالية
+        const idx = photos.findIndex(p => p.id === story.id);
+        const next = photos[idx + 1];
+        if (next) onNext(next);
+        else onClose();
+        return;
+      }
+      progressRef.current = requestAnimationFrame(tick);
+    };
+    startTime.current = Date.now();
+    progressRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(progressRef.current);
+  }, [paused, closing, story.id]);
+
+  const handleClose = () => {
+    setClosing(true);
+    setTimeout(onClose, 250);
+  };
+
+  // ضغطة قصيرة → skip
+  const handleTap = (e) => {
+    if (holdTimer.current) return; // كان هولد
+    const x = e.clientX || e.touches?.[0]?.clientX || 0;
+    const half = window.innerWidth / 2;
+    if (x > half) {
+      // تقدم
+      const idx = photos.findIndex(p => p.id === story.id);
+      const next = photos[idx + 1];
+      if (next) onNext(next); else handleClose();
+    } else {
+      // رجوع
+      const idx = photos.findIndex(p => p.id === story.id);
+      const prev = photos[idx - 1];
+      if (prev) onNext(prev); else { elapsed.current = 0; setProgress(0); }
+    }
+  };
+
+  // ضغطة طويلة → pause
+  const handlePressStart = () => {
+    holdTimer.current = setTimeout(() => {
+      setPaused(true);
+      holdTimer.current = "held";
+    }, 150);
+  };
+
+  const handlePressEnd = (e) => {
+    if (holdTimer.current === "held") {
+      setPaused(false);
+      startTime.current = Date.now();
+    } else {
+      clearTimeout(holdTimer.current);
+      handleTap(e);
+    }
+    holdTimer.current = null;
+  };
+
+  const timeLeft = (createdAt) => {
+    const diff = 24 * 60 * 60 * 1000 - (Date.now() - new Date(createdAt).getTime());
+    if (diff <= 0) return "منتهي";
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    return h > 0 ? `${h}س ${m}د` : `${m}د`;
+  };
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 bg-black flex flex-col overflow-hidden"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: closing ? 0 : 1, scale: closing ? 0.95 : 1, y: dragY }}
+      exit={{ opacity: 0, y: 100 }}
+      transition={{ duration: 0.2 }}
+      drag="y"
+      dragConstraints={{ top: 0, bottom: 300 }}
+      dragElastic={{ top: 0, bottom: 0.4 }}
+      onDrag={(_, info) => setDragY(Math.max(0, info.offset.y))}
+      onDragEnd={(_, info) => {
+        if (info.offset.y > 120 || info.velocity.y > 500) {
+          handleClose();
+        } else {
+          setDragY(0);
+        }
+      }}
+      style={{ touchAction: "none" }}>
+
+      {/* Progress bars — متعددة إذا فيه أكثر من صورة */}
+      <div className="absolute top-0 left-0 right-0 flex gap-1 p-2 z-20"
+        style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
+        {photos.map((p) => (
+          <div key={p.id} className="flex-1 h-0.5 bg-white/30 rounded-full overflow-hidden">
+            {p.id === story.id ? (
+              <motion.div className="h-full bg-white rounded-full"
+                style={{ width: `${progress}%` }} />
+            ) : (
+              <div className={`h-full rounded-full ${
+                photos.findIndex(x => x.id === story.id) > photos.findIndex(x => x.id === p.id)
+                  ? "bg-white w-full" : "bg-transparent w-0"
+              }`} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Header — الاسم والأفاتار */}
+      <div className="absolute left-0 right-0 flex items-center justify-between px-4 z-20"
+        style={{ top: "max(32px, calc(env(safe-area-inset-top) + 20px))" }}>
+        <motion.button whileTap={{ scale: 0.9 }} onClick={handleClose}
+          className="w-9 h-9 bg-black/50 backdrop-blur rounded-full flex items-center justify-center">
+          <X size={18} className="text-white" />
+        </motion.button>
+        <div className="flex items-center gap-2.5 bg-black/40 backdrop-blur-sm rounded-full pr-1 pl-4 py-1">
+          <div className="text-right">
+            <p className="text-white font-black text-sm leading-tight"
+              style={{ textShadow: "0 1px 4px rgba(0,0,0,0.8)" }}>
+              {story.uploader_name}
+            </p>
+            <p className="text-orange-300 text-[10px]">⏱️ {timeLeft(story.created_at)} متبقي</p>
+          </div>
+          <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-orange-500 shrink-0">
+            {story.uploader_avatar
+              ? <img src={story.uploader_avatar} className="w-full h-full object-cover" />
+              : <div className="w-full h-full bg-gray-700 flex items-center justify-center text-lg">🏍️</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Pause indicator */}
+      {paused && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/50 backdrop-blur rounded-full px-6 py-3">
+            <span className="text-white font-bold text-sm">⏸️ متوقف</span>
+          </div>
+        </div>
+      )}
+
+      {/* Image — gesture area */}
+      <div className="flex-1 relative"
+        onMouseDown={handlePressStart} onMouseUp={handlePressEnd}
+        onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}>
+        <img src={story.url} alt="" className="w-full h-full object-cover" draggable={false} />
+        {/* Caption */}
+        {story.caption && (
+          <div className="absolute bottom-24 left-0 right-0 flex justify-center px-6 pointer-events-none">
+            <div className="bg-black/55 backdrop-blur rounded-2xl px-5 py-3">
+              <p className="text-white text-center font-bold text-base"
+                style={{ textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
+                {story.caption}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Like button */}
+      <div className="flex justify-center pb-8 pt-3 shrink-0"
+        style={{ paddingBottom: "max(32px, calc(env(safe-area-inset-bottom) + 100px))" }}>
+        <motion.button whileTap={{ scale: 0.82 }} onClick={onLike}
+          className="flex items-center gap-2.5 bg-black/50 backdrop-blur-sm rounded-full px-8 py-3.5 border border-white/10">
+          <Heart size={24}
+            className={story.likes?.includes(profile.id) ? "text-red-500 fill-red-500" : "text-white"} />
+          <span className="text-white font-black text-lg">{story.likes?.length || 0}</span>
+        </motion.button>
+      </div>
+
+      {/* سحب للإغلاق — hint */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+        style={{ opacity: dragY > 30 ? Math.min(dragY / 120, 1) : 0 }}>
+        <div className="bg-black/70 backdrop-blur rounded-2xl px-6 py-3">
+          <p className="text-white font-bold text-sm">اسحب للإغلاق ↓</p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ─── Photos Tab — Snapchat Style ─── */
 function PhotosTab({ profile }) {
   // ─── modes: "camera" | "preview" | "feed" ───
@@ -2212,45 +2409,19 @@ function PhotosTab({ profile }) {
 
       {/* ─── STORY VIEWER ─── */}
       <AnimatePresence>
-        {selectedStory && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black flex flex-col">
-            {/* Progress bar */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gray-700 z-10">
-              <motion.div className="h-full bg-white" initial={{ width: 0 }} animate={{ width: "100%" }}
-                transition={{ duration: 5, ease: "linear" }}
-                onAnimationComplete={() => setSelectedStory(null)} />
-            </div>
-            {/* Header */}
-            <div className="absolute top-4 left-0 right-0 flex items-center justify-between px-4 z-10">
-              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setSelectedStory(null)}
-                className="w-9 h-9 bg-black/40 backdrop-blur rounded-full flex items-center justify-center">
-                <X size={18} className="text-white" />
-              </motion.button>
-              <div className="flex items-center gap-2">
-                <div className="text-right">
-                  <p className="text-white font-bold text-sm drop-shadow">{selectedStory.uploader_name}</p>
-                  <p className="text-gray-300 text-xs drop-shadow">⏱️ {timeLeft(selectedStory.created_at)} متبقي</p>
-                </div>
-                <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-orange-500">
-                  {selectedStory.uploader_avatar
-                    ? <img src={selectedStory.uploader_avatar} className="w-full h-full object-cover" />
-                    : <div className="w-full h-full bg-gray-700 flex items-center justify-center text-sm">🏍️</div>}
-                </div>
-              </div>
-            </div>
-            {/* Image */}
-            <img src={selectedStory.url} alt="" className="w-full h-full object-cover" />
-            {/* Like */}
-            <div className="absolute bottom-8 left-0 right-0 flex justify-center z-10">
-              <motion.button whileTap={{ scale: 0.85 }} onClick={() => toggleLike(selectedStory)}
-                className="flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-full px-6 py-3">
-                <Heart size={22} className={selectedStory.likes?.includes(profile.id) ? "text-red-500 fill-red-500" : "text-white"} />
-                <span className="text-white font-bold">{selectedStory.likes?.length || 0}</span>
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
+        {selectedStory && (() => {
+          // gestures state داخل render — نستخدم ref عشان ما يعيد render
+          return (
+            <StoryViewer
+              story={selectedStory}
+              profile={profile}
+              onClose={() => setSelectedStory(null)}
+              onLike={() => toggleLike(selectedStory)}
+              photos={photos}
+              onNext={(next) => setSelectedStory(next)}
+            />
+          );
+        })()}
       </AnimatePresence>
 
       {/* ─── CAMERA MODE ─── */}
