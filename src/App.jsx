@@ -2297,7 +2297,8 @@ function PhotosTab({ profile }) {
               )}
 
               {/* Controls */}
-              <div className="absolute bottom-8 left-0 right-0 flex items-center justify-between px-8 z-10">
+              <div className="absolute left-0 right-0 flex items-center justify-between px-8 z-10"
+                style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 100px)" }}>
                 {/* Feed button */}
                 <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMode("feed")}
                   className="w-12 h-12 bg-black/40 backdrop-blur rounded-full flex flex-col items-center justify-center gap-0.5">
@@ -2363,7 +2364,7 @@ function PhotosTab({ profile }) {
           </div>
 
           {/* Send button */}
-          <div className="absolute bottom-8 right-6 z-20">
+          <div className="absolute right-6 z-20" style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 100px)" }}>
             <motion.button whileTap={{ scale: 0.9 }} onClick={sendSnap} disabled={uploading}
               className="bg-orange-500 text-white font-black px-6 py-4 rounded-2xl flex items-center gap-2 shadow-xl shadow-orange-500/50 disabled:opacity-60">
               {uploading
