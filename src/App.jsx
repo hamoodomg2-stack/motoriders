@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Map, Users, MessageCircle, Shield, User, LogOut, Bike,
@@ -914,17 +915,6 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
         </AnimatePresence>
       </div>
 
-      {/* Global RiderProfile modal — خارج كل شي عشان fixed يشتغل */}
-      <AnimatePresence>
-        {mapSelectedRider && (
-          <RiderProfile
-            riderId={mapSelectedRider}
-            onClose={() => setMapSelectedRider(null)}
-            onDM={(u) => { setMapSelectedRider(null); setOpenDMWith(u); setActiveTab("chat"); }}
-          />
-        )}
-      </AnimatePresence>
-
       {/* Bottom Nav */}
       <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex items-center justify-around px-1 pt-1.5 pb-2 max-w-lg mx-auto">
@@ -950,6 +940,17 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           })}
         </div>
       </div>
+
+      {/* Global RiderProfile modal — في آخر الـ DOM */}
+      <AnimatePresence>
+        {mapSelectedRider && (
+          <RiderProfile
+            riderId={mapSelectedRider}
+            onClose={() => setMapSelectedRider(null)}
+            onDM={(u) => { setMapSelectedRider(null); setOpenDMWith(u); setActiveTab("chat"); }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1222,10 +1223,10 @@ function RiderProfile({ riderId, onClose, onDM }) {
     return `${Math.floor(mins / 60)}س`;
   };
 
-  return (
+  return createPortal(
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] flex flex-col"
-      style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 flex flex-col"
+      style={{ zIndex: 9999, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
 
       <motion.div
@@ -1361,7 +1362,8 @@ function RiderProfile({ riderId, onClose, onDM }) {
           )}
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 }
 
