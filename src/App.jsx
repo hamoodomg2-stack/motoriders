@@ -796,6 +796,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     { id: "map", icon: Map, label: "الخريطة" },
     { id: "riders", icon: Users, label: "سائقون" },
     { id: "chat", icon: MessageCircle, label: "دردشة" },
+    { id: "groups", icon: Shield, label: "مجموعات" },
     { id: "leaderboard", icon: Trophy, label: "تصنيف" },
     { id: "profile", icon: User, label: "بروفايل" },
   ];
@@ -904,19 +905,20 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} />}
           {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} />}
+          {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
 
       {/* Bottom Nav */}
       <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <div className="flex items-center justify-around px-2 pt-2 pb-3 max-w-lg mx-auto">
+        <div className="flex items-center justify-around px-1 pt-1.5 pb-2 max-w-lg mx-auto">
           {tabs.map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
             return (
               <motion.button key={tab.id} whileTap={{ scale: 0.82 }} onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center gap-1 py-1.5 px-3 relative min-w-[56px]">
+                className="flex flex-col items-center gap-0.5 py-1 px-2 relative min-w-[44px]">
                 {active && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-orange-500/15 rounded-2xl" transition={{ type: "spring", bounce: 0.35 }} />}
                 <div className="relative">
                   <Icon size={22} className={`relative z-10 transition-colors ${active ? "text-orange-500" : "text-gray-600"}`} />
