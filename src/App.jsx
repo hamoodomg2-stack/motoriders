@@ -1121,39 +1121,6 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       </AnimatePresence>
 
       {/* Selected rider */}
-      <AnimatePresence>
-        {selected && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="absolute bottom-20 left-3 right-3 z-[1000]">
-            <div className="bg-gray-950/98 border border-orange-500/40 rounded-2xl p-4 backdrop-blur shadow-xl">
-              <div className="flex items-center gap-3 mb-3">
-                <button onClick={() => setSelected(null)} className="text-gray-500 text-xl leading-none">✕</button>
-                <div className="flex-1 text-right">
-                  <p className="text-white font-bold text-sm">{selected.full_name}</p>
-                  <p className="text-gray-500 text-xs">{selected.bike_type}</p>
-                </div>
-                <div className="text-center bg-orange-500/10 border border-orange-500/30 rounded-xl px-3 py-2">
-                  <p className="text-orange-500 font-black text-xl">{selected.current_speed || 0}</p>
-                  <p className="text-gray-600 text-xs">كم/س</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <motion.button whileTap={{ scale: 0.95 }}
-                  onClick={() => setSelectedRiderProfile(selected.id)}
-                  className="flex-1 bg-gray-800 border border-gray-700 text-gray-300 font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1">
-                  <User size={13} /> البروفايل
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.95 }}
-                  onClick={() => { onRiderDM?.(selected); setSelected(null); }}
-                  className="flex-1 bg-orange-500 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 shadow-lg shadow-orange-500/30">
-                  <MessageCircle size={13} /> رسالة
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* SOS */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1">
         <motion.button whileTap={{ scale: 0.88 }} onClick={() => { setSos(true); setTimeout(() => setSos(false), 5000); }}
@@ -1181,7 +1148,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {riders.filter(r => r.lat && r.lng).map(r => (
           <Marker key={r.id} position={[r.lat, r.lng]}
             icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url)}
-            eventHandlers={{ click: () => setSelected(r) }} />
+            eventHandlers={{ click: () => setSelectedRiderProfile(r.id) }} />
         ))}
 
         {/* التحذيرات */}
