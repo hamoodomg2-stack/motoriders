@@ -1028,10 +1028,12 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           <RiderProfile
             riderId={selectedRiderProfile}
             onClose={() => setSelectedRiderProfile(null)}
-            onDM={(u) => { onRiderDM?.(u); setSelectedRiderProfile(null); }}
+            onDM={(u) => { onRiderDM?.(u); setSelectedRiderProfile(null); setSelected(null); }}
           />
         )}
       </AnimatePresence>
+
+      {/* My card */}
       <div className="absolute top-3 right-3 z-[1000]">
         <div className="bg-gray-950/95 backdrop-blur border border-orange-500/40 rounded-2xl px-3 py-2 text-right shadow-xl">
           <p className="text-white font-bold text-sm">{profile?.full_name || "أنت"}</p>
@@ -1731,9 +1733,12 @@ function DMConversation({ profile, otherUser, onBack }) {
 
     const ch = supabase.channel(`dm-${conversationId}`)
       .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "direct_messages",
-          filter: `conversation_id=eq.${conversationId}` },
-        (payload) => setMsgs(prev => [...prev, payload.new])
+        { event: "INSERT", schema: "public", table: "direct_messages" },
+        (payload) => {
+          if (payload.new.conversation_id === conversationId) {
+            setMsgs(prev => [...prev, payload.new]);
+          }
+        }
       ).subscribe();
     return () => supabase.removeChannel(ch);
   }, [conversationId]);
@@ -1871,9 +1876,12 @@ function ChatTab({ profile, openDMWith, onDMOpened }) {
     fetchConversations();
     const ch = supabase.channel("dms-list-rt")
       .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "direct_messages",
-          filter: `receiver_id=eq.${profile.id}` },
-        () => fetchConversations()
+        { event: "INSERT", schema: "public", table: "direct_messages" },
+        (payload) => {
+          if (payload.new.receiver_id === profile.id || payload.new.sender_id === profile.id) {
+            fetchConversations();
+          }
+        }
       ).subscribe();
     return () => supabase.removeChannel(ch);
   }, [profile.id]);
@@ -1999,14 +2007,8 @@ function ChatTab({ profile, openDMWith, onDMOpened }) {
               <p className="text-xs">اضغط على دراج من الخريطة أو السائقين لتراسله</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-800/50">
-              {conversations.map(async (conv) => {
-                const otherId = conv.sender_id === profile.id ? conv.receiver_id : conv.sender_id;
-                return null; // سيتعامل معها DMList
-              })}
-            </div>
+            <DMList profile={profile} conversations={conversations} onOpen={setDmConversation} />
           )}
-          <DMList profile={profile} conversations={conversations} onOpen={setDmConversation} />
         </div>
       )}
     </motion.div>
