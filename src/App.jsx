@@ -2014,32 +2014,40 @@ function GroupsTab({ profile }) {
   );
 }
 
-/* ─── Photos Tab ─── */
+/* ─── Photos Tab — Snapchat Style ─── */
 function PhotosTab({ profile }) {
+  // ─── modes: "camera" | "preview" | "feed" ───
+  const [mode, setMode] = useState("camera");
   const [photos, setPhotos] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingFeed, setLoadingFeed] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [caption, setCaption] = useState("");
-  const [preview, setPreview] = useState(null);
-  const [file, setFile] = useState(null);
-  const [showUpload, setShowUpload] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [capturedImage, setCapturedImage] = useState(null); // base64
+  const [capturedBlob, setCapturedBlob] = useState(null);
+  const [textOverlay, setTextOverlay] = useState("");
+  const [showText, setShowText] = useState(false);
+  const [facingMode, setFacingMode] = useState("environment"); // back camera
+  const [selectedStory, setSelectedStory] = useState(null);
   const [toast, setToast] = useState(null);
-  const fileRef = useRef(null);
+  const [cameraError, setCameraError] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
 
+  // ─── جلب الصور النشطة (أقل من 24 ساعة) ───
   const fetchPhotos = async () => {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data } = await supabase
       .from("photos")
       .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
+      .gt("created_at", since)
+      .order("created_at", { ascending: false });
     if (data) setPhotos(data);
-    setLoading(false);
+    setLoadingFeed(false);
   };
 
   useEffect(() => {
@@ -2050,209 +2058,378 @@ function PhotosTab({ profile }) {
     return () => supabase.removeChannel(ch);
   }, []);
 
-  const handleFile = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > 10 * 1024 * 1024) { showToast("الصورة أكبر من 10MB", "error"); return; }
-    setFile(f);
-    const reader = new FileReader();
-    reader.onload = (ev) => setPreview(ev.target.result);
-    reader.readAsDataURL(f);
-    setShowUpload(true);
+  // ─── تشغيل الكاميرا ───
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (e) {
+      setCameraError("يرجى السماح بالوصول للكاميرا من إعدادات المتصفح");
+    }
   };
 
-  const uploadPhoto = async () => {
-    if (!file) return;
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (mode === "camera") startCamera();
+    else stopCamera();
+    return () => stopCamera();
+  }, [mode, facingMode]);
+
+  // ─── التقاط الصورة ───
+  const capture = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext("2d");
+    // flip لو كاميرا أمامية
+    if (facingMode === "user") {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64 = canvas.toDataURL("image/jpeg", 0.85);
+    setCapturedImage(base64);
+    // تحويل لـ Blob للرفع
+    canvas.toBlob(blob => setCapturedBlob(blob), "image/jpeg", 0.85);
+    setMode("preview");
+  };
+
+  // ─── رفع الصورة مع النص ───
+  const sendSnap = async () => {
+    if (!capturedBlob) return;
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
-      const path = `${profile.id}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("photos")
-        .upload(path, file, { upsert: false });
+      // إذا فيه نص، ارسمه على الصورة
+      let finalBlob = capturedBlob;
+      if (textOverlay.trim()) {
+        const canvas = canvasRef.current;
+        const img = new Image();
+        await new Promise(resolve => { img.onload = resolve; img.src = capturedImage; });
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        // خلفية شبه شفافة للنص
+        const fontSize = Math.max(28, Math.round(canvas.width * 0.06));
+        ctx.font = `bold ${fontSize}px Arial`;
+        ctx.textAlign = "center";
+        const lines = textOverlay.split("\n");
+        const lineH = fontSize * 1.4;
+        const totalH = lines.length * lineH + 24;
+        const y = canvas.height / 2 - totalH / 2;
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.roundRect(canvas.width * 0.05, y - 12, canvas.width * 0.9, totalH, 16);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowColor = "rgba(0,0,0,0.8)";
+        ctx.shadowBlur = 8;
+        lines.forEach((line, i) => {
+          ctx.fillText(line, canvas.width / 2, y + i * lineH + fontSize);
+        });
+        finalBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.88));
+      }
+
+      const path = `${profile.id}/${Date.now()}.jpg`;
+      const { error: upErr } = await supabase.storage.from("photos").upload(path, finalBlob, { upsert: false });
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from("photos").getPublicUrl(path);
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
       await supabase.from("photos").insert({
         uploader_id: profile.id,
         uploader_name: profile.full_name,
         uploader_avatar: profile.avatar_url || null,
         url: publicUrl,
-        caption: caption.trim() || null,
+        caption: textOverlay.trim() || null,
         likes: [],
         storage_path: path,
+        expires_at: expiresAt,
       });
 
-      setFile(null); setPreview(null); setCaption(""); setShowUpload(false);
-      showToast("✅ تم نشر الصورة!");
+      setCapturedImage(null); setCapturedBlob(null); setTextOverlay(""); setShowText(false);
+      setMode("camera");
+      showToast("✅ تم نشر اللقطة!");
     } catch (e) {
-      showToast("خطأ في الرفع: " + e.message, "error");
+      showToast("خطأ: " + e.message, "error");
     }
     setUploading(false);
   };
 
   const toggleLike = async (photo) => {
     const likes = photo.likes || [];
-    const alreadyLiked = likes.includes(profile.id);
-    const newLikes = alreadyLiked
-      ? likes.filter(id => id !== profile.id)
-      : [...likes, profile.id];
+    const liked = likes.includes(profile.id);
+    const newLikes = liked ? likes.filter(id => id !== profile.id) : [...likes, profile.id];
     await supabase.from("photos").update({ likes: newLikes }).eq("id", photo.id);
     setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, likes: newLikes } : p));
-    if (selectedPhoto?.id === photo.id) setSelectedPhoto(prev => ({ ...prev, likes: newLikes }));
+    if (selectedStory?.id === photo.id) setSelectedStory(prev => ({ ...prev, likes: newLikes }));
   };
 
-  const deletePhoto = async (photo) => {
-    if (photo.uploader_id !== profile.id) return;
-    await supabase.storage.from("photos").remove([photo.storage_path]);
-    await supabase.from("photos").delete().eq("id", photo.id);
-    setPhotos(prev => prev.filter(p => p.id !== photo.id));
-    setSelectedPhoto(null);
-    showToast("🗑️ تم حذف الصورة");
+  // ─── وقت متبقي ───
+  const timeLeft = (createdAt) => {
+    const diff = 24 * 60 * 60 * 1000 - (Date.now() - new Date(createdAt).getTime());
+    if (diff <= 0) return "منتهي";
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    return h > 0 ? `${h}س ${m}د` : `${m}د`;
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="absolute inset-0 flex flex-col bg-gray-950">
+      className="absolute inset-0 bg-black flex flex-col overflow-hidden">
+
+      {/* Hidden canvas for capture */}
+      <canvas ref={canvasRef} className="hidden" />
 
       {/* Toast */}
       <AnimatePresence>
         {toast && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl text-white ${toast.type === "error" ? "bg-red-600" : "bg-green-600"}`}>
+            className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl text-white ${toast.type === "error" ? "bg-red-600" : "bg-green-600"}`}>
             {toast.msg}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Fullscreen Photo Viewer */}
+      {/* ─── STORY VIEWER ─── */}
       <AnimatePresence>
-        {selectedPhoto && (
+        {selectedStory && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 shrink-0">
-              <div className="flex items-center gap-3">
-                {selectedPhoto.uploader_id === profile.id && (
-                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => deletePhoto(selectedPhoto)}
-                    className="w-9 h-9 bg-red-500/20 border border-red-500/40 rounded-xl flex items-center justify-center">
-                    <X size={16} className="text-red-400" />
-                  </motion.button>
-                )}
-                <motion.button whileTap={{ scale: 0.9 }}
-                  onClick={() => toggleLike(selectedPhoto)}
-                  className="flex items-center gap-1.5 bg-gray-800 rounded-xl px-3 py-2">
-                  <Heart size={16} className={selectedPhoto.likes?.includes(profile.id) ? "text-red-500 fill-red-500" : "text-gray-400"} />
-                  <span className="text-white text-sm font-bold">{selectedPhoto.likes?.length || 0}</span>
-                </motion.button>
-              </div>
-              <div className="text-right">
-                <p className="text-white font-bold text-sm">{selectedPhoto.uploader_name}</p>
-                <p className="text-gray-500 text-xs">{new Date(selectedPhoto.created_at).toLocaleDateString("ar")}</p>
-              </div>
-              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setSelectedPhoto(null)}
-                className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center">
+            {/* Progress bar */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gray-700 z-10">
+              <motion.div className="h-full bg-white" initial={{ width: 0 }} animate={{ width: "100%" }}
+                transition={{ duration: 5, ease: "linear" }}
+                onAnimationComplete={() => setSelectedStory(null)} />
+            </div>
+            {/* Header */}
+            <div className="absolute top-4 left-0 right-0 flex items-center justify-between px-4 z-10">
+              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setSelectedStory(null)}
+                className="w-9 h-9 bg-black/40 backdrop-blur rounded-full flex items-center justify-center">
                 <X size={18} className="text-white" />
               </motion.button>
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <p className="text-white font-bold text-sm drop-shadow">{selectedStory.uploader_name}</p>
+                  <p className="text-gray-300 text-xs drop-shadow">⏱️ {timeLeft(selectedStory.created_at)} متبقي</p>
+                </div>
+                <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-orange-500">
+                  {selectedStory.uploader_avatar
+                    ? <img src={selectedStory.uploader_avatar} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full bg-gray-700 flex items-center justify-center text-sm">🏍️</div>}
+                </div>
+              </div>
             </div>
-
-            <div className="flex-1 flex items-center justify-center p-4 min-h-0">
-              <img src={selectedPhoto.url} alt="" className="max-w-full max-h-full object-contain rounded-2xl" />
+            {/* Image */}
+            <img src={selectedStory.url} alt="" className="w-full h-full object-cover" />
+            {/* Like */}
+            <div className="absolute bottom-8 left-0 right-0 flex justify-center z-10">
+              <motion.button whileTap={{ scale: 0.85 }} onClick={() => toggleLike(selectedStory)}
+                className="flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-full px-6 py-3">
+                <Heart size={22} className={selectedStory.likes?.includes(profile.id) ? "text-red-500 fill-red-500" : "text-white"} />
+                <span className="text-white font-bold">{selectedStory.likes?.length || 0}</span>
+              </motion.button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {selectedPhoto.caption && (
-              <div className="px-4 py-3 shrink-0">
-                <p className="text-gray-300 text-sm text-right">{selectedPhoto.caption}</p>
+      {/* ─── CAMERA MODE ─── */}
+      {mode === "camera" && (
+        <div className="flex-1 relative flex flex-col">
+          {cameraError ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+              <Camera size={48} className="text-gray-600" />
+              <p className="text-gray-400 text-center text-sm">{cameraError}</p>
+              <motion.button whileTap={{ scale: 0.95 }} onClick={startCamera}
+                className="bg-orange-500 text-white font-bold px-6 py-3 rounded-2xl">
+                إعادة المحاولة
+              </motion.button>
+            </div>
+          ) : (
+            <>
+              <video ref={videoRef} className="flex-1 w-full object-cover"
+                playsInline muted autoPlay
+                style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }} />
+
+              {/* Stories bar — أعلى الكاميرا */}
+              {photos.length > 0 && (
+                <div className="absolute top-4 left-0 right-0 z-10">
+                  <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
+                    {photos.map(photo => (
+                      <motion.div key={photo.id} whileTap={{ scale: 0.9 }}
+                        onClick={() => setSelectedStory(photo)}
+                        className="flex flex-col items-center gap-1 shrink-0 cursor-pointer">
+                        <div className="w-14 h-14 rounded-full overflow-hidden border-3 border-orange-500 p-0.5"
+                          style={{ border: "3px solid #f97316" }}>
+                          <div className="w-full h-full rounded-full overflow-hidden">
+                            {photo.uploader_avatar
+                              ? <img src={photo.uploader_avatar} className="w-full h-full object-cover" />
+                              : <div className="w-full h-full bg-gray-700 flex items-center justify-center">🏍️</div>}
+                          </div>
+                        </div>
+                        <p className="text-white text-[9px] font-medium max-w-[56px] truncate text-center drop-shadow">
+                          {photo.uploader_name.split(" ")[0]}
+                        </p>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Controls */}
+              <div className="absolute bottom-8 left-0 right-0 flex items-center justify-between px-8 z-10">
+                {/* Feed button */}
+                <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMode("feed")}
+                  className="w-12 h-12 bg-black/40 backdrop-blur rounded-full flex flex-col items-center justify-center gap-0.5">
+                  <Image size={18} className="text-white" />
+                  {photos.length > 0 && (
+                    <span className="text-orange-400 text-[9px] font-black">{photos.length}</span>
+                  )}
+                </motion.button>
+
+                {/* Capture button */}
+                <motion.button whileTap={{ scale: 0.88 }} onClick={capture}
+                  className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-white/20 backdrop-blur">
+                  <div className="w-14 h-14 bg-white rounded-full" />
+                </motion.button>
+
+                {/* Flip camera */}
+                <motion.button whileTap={{ scale: 0.9 }}
+                  onClick={() => setFacingMode(f => f === "environment" ? "user" : "environment")}
+                  className="w-12 h-12 bg-black/40 backdrop-blur rounded-full flex items-center justify-center">
+                  <RefreshCw size={20} className="text-white" />
+                </motion.button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── PREVIEW MODE ─── */}
+      {mode === "preview" && capturedImage && (
+        <div className="flex-1 relative flex flex-col">
+          <img src={capturedImage} alt="" className="flex-1 w-full object-cover" />
+
+          {/* نص فوق الصورة */}
+          {showText && (
+            <div className="absolute inset-0 flex items-center justify-center p-8 z-10">
+              <textarea value={textOverlay} onChange={e => setTextOverlay(e.target.value)}
+                placeholder="اكتب شيئاً..." dir="rtl" rows={3} autoFocus
+                className="w-full bg-black/55 backdrop-blur text-white text-center text-xl font-bold placeholder-white/60 border-2 border-white/30 rounded-2xl p-4 resize-none focus:outline-none focus:border-orange-400"
+                style={{ textShadow: "0 2px 8px rgba(0,0,0,0.8)" }} />
+            </div>
+          )}
+          {/* عرض النص المكتوب */}
+          {!showText && textOverlay && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 p-8">
+              <p className="text-white text-xl font-black text-center drop-shadow-lg"
+                style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>
+                {textOverlay}
+              </p>
+            </div>
+          )}
+
+          {/* Top controls */}
+          <div className="absolute top-4 left-0 right-0 flex items-center justify-between px-4 z-20">
+            <motion.button whileTap={{ scale: 0.9 }}
+              onClick={() => { setMode("camera"); setCapturedImage(null); setTextOverlay(""); setShowText(false); }}
+              className="w-10 h-10 bg-black/50 backdrop-blur rounded-full flex items-center justify-center">
+              <X size={20} className="text-white" />
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowText(!showText)}
+              className={`px-4 py-2 rounded-full font-bold text-sm backdrop-blur ${showText ? "bg-orange-500 text-white" : "bg-black/50 text-white"}`}>
+              Aa نص
+            </motion.button>
+          </div>
+
+          {/* Send button */}
+          <div className="absolute bottom-8 right-6 z-20">
+            <motion.button whileTap={{ scale: 0.9 }} onClick={sendSnap} disabled={uploading}
+              className="bg-orange-500 text-white font-black px-6 py-4 rounded-2xl flex items-center gap-2 shadow-xl shadow-orange-500/50 disabled:opacity-60">
+              {uploading
+                ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={20} /></motion.div>
+                : <><span className="text-lg">إرسال</span><ArrowRight size={20} /></>}
+            </motion.button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── FEED MODE ─── */}
+      {mode === "feed" && (
+        <div className="flex-1 flex flex-col bg-gray-950">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMode("camera")}
+              className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center">
+              <Camera size={18} className="text-orange-400" />
+            </motion.button>
+            <h2 className="text-white font-black">لقطات الدراجين 📸</h2>
+            <div className="w-10" />
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {loadingFeed ? (
+              <div className="flex items-center justify-center h-full">
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                  <Loader size={28} className="text-orange-500" />
+                </motion.div>
+              </div>
+            ) : photos.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-600">
+                <Camera size={48} className="opacity-20" />
+                <p className="text-sm">لا توجد لقطات نشطة</p>
+                <p className="text-xs">اللقطات تنحذف بعد 24 ساعة</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-0.5 p-0.5">
+                {photos.map((photo, i) => (
+                  <motion.div key={photo.id}
+                    initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="relative aspect-square cursor-pointer overflow-hidden bg-gray-900"
+                    onClick={() => { setSelectedStory(photo); setMode("camera"); }}>
+                    <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    {/* Gradient overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                    {/* Info */}
+                    <div className="absolute bottom-1.5 left-1.5 right-1.5">
+                      <p className="text-white text-[9px] font-bold truncate">{photo.uploader_name.split(" ")[0]}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-orange-300 text-[8px]">⏱️ {timeLeft(photo.created_at)}</p>
+                        {(photo.likes?.length || 0) > 0 && (
+                          <div className="flex items-center gap-0.5">
+                            <Heart size={8} className="text-red-400 fill-red-400" />
+                            <span className="text-white text-[8px]">{photo.likes.length}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between shrink-0">
-        <motion.button whileTap={{ scale: 0.93 }}
-          onClick={() => fileRef.current?.click()}
-          className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-orange-500/30 flex items-center gap-1.5">
-          <Camera size={15} /> نشر صورة
-        </motion.button>
-        <h2 className="text-white font-black text-lg">لقطات 📸</h2>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-      </div>
-
-      {/* Upload Form */}
-      <AnimatePresence>
-        {showUpload && preview && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden shrink-0 border-b border-gray-800">
-            <div className="p-4 flex gap-3">
-              <div className="flex flex-col gap-2 flex-1">
-                <input value={caption} onChange={e => setCaption(e.target.value)}
-                  placeholder="أضف وصفاً... (اختياري)" dir="rtl"
-                  className="w-full bg-gray-900 border border-gray-700 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm focus:border-orange-500 focus:outline-none" />
-                <div className="flex gap-2">
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowUpload(false); setPreview(null); setFile(null); setCaption(""); }}
-                    className="flex-1 bg-gray-800 text-gray-400 font-bold py-2.5 rounded-xl text-sm">
-                    إلغاء
-                  </motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={uploadPhoto} disabled={uploading}
-                    className="flex-1 bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-1.5">
-                    {uploading
-                      ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div>
-                      : <><Upload size={14} /> نشر</>}
-                  </motion.button>
-                </div>
-              </div>
-              <div className="w-24 h-24 rounded-2xl overflow-hidden border border-gray-700 shrink-0">
-                <img src={preview} alt="" className="w-full h-full object-cover" />
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Photos Grid */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-              <Loader size={28} className="text-orange-500" />
-            </motion.div>
           </div>
-        ) : photos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-600">
-            <Camera size={48} className="opacity-20" />
-            <p className="text-sm">لا توجد صور بعد</p>
-            <p className="text-xs">كن أول من ينشر لقطة! 📸</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-0.5 p-0.5">
-            {photos.map((photo, i) => (
-              <motion.div key={photo.id}
-                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.03 }}
-                className="relative aspect-square cursor-pointer overflow-hidden bg-gray-900"
-                onClick={() => setSelectedPhoto(photo)}>
-                <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                {/* Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 hover:opacity-100 transition-opacity flex items-end p-2">
-                  <div className="flex items-center gap-1">
-                    <Heart size={12} className={photo.likes?.includes(profile.id) ? "text-red-400 fill-red-400" : "text-white"} />
-                    <span className="text-white text-xs font-bold">{photo.likes?.length || 0}</span>
-                  </div>
-                </div>
-                {/* Like badge */}
-                {(photo.likes?.length || 0) > 0 && (
-                  <div className="absolute top-1.5 right-1.5 bg-black/60 rounded-full px-1.5 py-0.5 flex items-center gap-0.5">
-                    <Heart size={9} className="text-red-400 fill-red-400" />
-                    <span className="text-white text-[9px] font-bold">{photo.likes.length}</span>
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </motion.div>
   );
 }
