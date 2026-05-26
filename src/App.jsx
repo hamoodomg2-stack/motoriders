@@ -6,7 +6,7 @@ import {
   Settings, ChevronRight, Star, Wifi, WifiOff, Eye, EyeOff,
   Lock, Mail, Hash, ArrowRight, Loader, Ban, RefreshCw,
   UserCheck, UserX, Crown, Search, Trophy, Zap, Award, TrendingUp,
-  BellOff, BellRing
+  BellOff, BellRing, Camera, Heart, Image, X, Upload
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
@@ -797,6 +797,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     { id: "riders", icon: Users, label: "سائقون" },
     { id: "chat", icon: MessageCircle, label: "دردشة" },
     { id: "groups", icon: Shield, label: "مجموعات" },
+    { id: "photos", icon: Camera, label: "لقطات" },
     { id: "leaderboard", icon: Trophy, label: "تصنيف" },
     { id: "profile", icon: User, label: "بروفايل" },
   ];
@@ -906,6 +907,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} />}
           {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} />}
           {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
+          {activeTab === "photos" && <PhotosTab key="photos" profile={profile} />}
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
@@ -2008,6 +2010,249 @@ function GroupsTab({ profile }) {
           })}
         </div>
       )}
+    </motion.div>
+  );
+}
+
+/* ─── Photos Tab ─── */
+function PhotosTab({ profile }) {
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [caption, setCaption] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [file, setFile] = useState(null);
+  const [showUpload, setShowUpload] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [toast, setToast] = useState(null);
+  const fileRef = useRef(null);
+
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const fetchPhotos = async () => {
+    const { data } = await supabase
+      .from("photos")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (data) setPhotos(data);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchPhotos();
+    const ch = supabase.channel("photos-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "photos" }, fetchPhotos)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, []);
+
+  const handleFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 10 * 1024 * 1024) { showToast("الصورة أكبر من 10MB", "error"); return; }
+    setFile(f);
+    const reader = new FileReader();
+    reader.onload = (ev) => setPreview(ev.target.result);
+    reader.readAsDataURL(f);
+    setShowUpload(true);
+  };
+
+  const uploadPhoto = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${profile.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("photos")
+        .upload(path, file, { upsert: false });
+      if (upErr) throw upErr;
+
+      const { data: { publicUrl } } = supabase.storage.from("photos").getPublicUrl(path);
+
+      await supabase.from("photos").insert({
+        uploader_id: profile.id,
+        uploader_name: profile.full_name,
+        uploader_avatar: profile.avatar_url || null,
+        url: publicUrl,
+        caption: caption.trim() || null,
+        likes: [],
+        storage_path: path,
+      });
+
+      setFile(null); setPreview(null); setCaption(""); setShowUpload(false);
+      showToast("✅ تم نشر الصورة!");
+    } catch (e) {
+      showToast("خطأ في الرفع: " + e.message, "error");
+    }
+    setUploading(false);
+  };
+
+  const toggleLike = async (photo) => {
+    const likes = photo.likes || [];
+    const alreadyLiked = likes.includes(profile.id);
+    const newLikes = alreadyLiked
+      ? likes.filter(id => id !== profile.id)
+      : [...likes, profile.id];
+    await supabase.from("photos").update({ likes: newLikes }).eq("id", photo.id);
+    setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, likes: newLikes } : p));
+    if (selectedPhoto?.id === photo.id) setSelectedPhoto(prev => ({ ...prev, likes: newLikes }));
+  };
+
+  const deletePhoto = async (photo) => {
+    if (photo.uploader_id !== profile.id) return;
+    await supabase.storage.from("photos").remove([photo.storage_path]);
+    await supabase.from("photos").delete().eq("id", photo.id);
+    setPhotos(prev => prev.filter(p => p.id !== photo.id));
+    setSelectedPhoto(null);
+    showToast("🗑️ تم حذف الصورة");
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 flex flex-col bg-gray-950">
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl font-bold text-sm shadow-xl text-white ${toast.type === "error" ? "bg-red-600" : "bg-green-600"}`}>
+            {toast.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Fullscreen Photo Viewer */}
+      <AnimatePresence>
+        {selectedPhoto && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                {selectedPhoto.uploader_id === profile.id && (
+                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => deletePhoto(selectedPhoto)}
+                    className="w-9 h-9 bg-red-500/20 border border-red-500/40 rounded-xl flex items-center justify-center">
+                    <X size={16} className="text-red-400" />
+                  </motion.button>
+                )}
+                <motion.button whileTap={{ scale: 0.9 }}
+                  onClick={() => toggleLike(selectedPhoto)}
+                  className="flex items-center gap-1.5 bg-gray-800 rounded-xl px-3 py-2">
+                  <Heart size={16} className={selectedPhoto.likes?.includes(profile.id) ? "text-red-500 fill-red-500" : "text-gray-400"} />
+                  <span className="text-white text-sm font-bold">{selectedPhoto.likes?.length || 0}</span>
+                </motion.button>
+              </div>
+              <div className="text-right">
+                <p className="text-white font-bold text-sm">{selectedPhoto.uploader_name}</p>
+                <p className="text-gray-500 text-xs">{new Date(selectedPhoto.created_at).toLocaleDateString("ar")}</p>
+              </div>
+              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setSelectedPhoto(null)}
+                className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center">
+                <X size={18} className="text-white" />
+              </motion.button>
+            </div>
+
+            <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+              <img src={selectedPhoto.url} alt="" className="max-w-full max-h-full object-contain rounded-2xl" />
+            </div>
+
+            {selectedPhoto.caption && (
+              <div className="px-4 py-3 shrink-0">
+                <p className="text-gray-300 text-sm text-right">{selectedPhoto.caption}</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between shrink-0">
+        <motion.button whileTap={{ scale: 0.93 }}
+          onClick={() => fileRef.current?.click()}
+          className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-orange-500/30 flex items-center gap-1.5">
+          <Camera size={15} /> نشر صورة
+        </motion.button>
+        <h2 className="text-white font-black text-lg">لقطات 📸</h2>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      </div>
+
+      {/* Upload Form */}
+      <AnimatePresence>
+        {showUpload && preview && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden shrink-0 border-b border-gray-800">
+            <div className="p-4 flex gap-3">
+              <div className="flex flex-col gap-2 flex-1">
+                <input value={caption} onChange={e => setCaption(e.target.value)}
+                  placeholder="أضف وصفاً... (اختياري)" dir="rtl"
+                  className="w-full bg-gray-900 border border-gray-700 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm focus:border-orange-500 focus:outline-none" />
+                <div className="flex gap-2">
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowUpload(false); setPreview(null); setFile(null); setCaption(""); }}
+                    className="flex-1 bg-gray-800 text-gray-400 font-bold py-2.5 rounded-xl text-sm">
+                    إلغاء
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={uploadPhoto} disabled={uploading}
+                    className="flex-1 bg-orange-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-1.5">
+                    {uploading
+                      ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div>
+                      : <><Upload size={14} /> نشر</>}
+                  </motion.button>
+                </div>
+              </div>
+              <div className="w-24 h-24 rounded-2xl overflow-hidden border border-gray-700 shrink-0">
+                <img src={preview} alt="" className="w-full h-full object-cover" />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Photos Grid */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+              <Loader size={28} className="text-orange-500" />
+            </motion.div>
+          </div>
+        ) : photos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-600">
+            <Camera size={48} className="opacity-20" />
+            <p className="text-sm">لا توجد صور بعد</p>
+            <p className="text-xs">كن أول من ينشر لقطة! 📸</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-0.5 p-0.5">
+            {photos.map((photo, i) => (
+              <motion.div key={photo.id}
+                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.03 }}
+                className="relative aspect-square cursor-pointer overflow-hidden bg-gray-900"
+                onClick={() => setSelectedPhoto(photo)}>
+                <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                {/* Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 hover:opacity-100 transition-opacity flex items-end p-2">
+                  <div className="flex items-center gap-1">
+                    <Heart size={12} className={photo.likes?.includes(profile.id) ? "text-red-400 fill-red-400" : "text-white"} />
+                    <span className="text-white text-xs font-bold">{photo.likes?.length || 0}</span>
+                  </div>
+                </div>
+                {/* Like badge */}
+                {(photo.likes?.length || 0) > 0 && (
+                  <div className="absolute top-1.5 right-1.5 bg-black/60 rounded-full px-1.5 py-0.5 flex items-center gap-0.5">
+                    <Heart size={9} className="text-red-400 fill-red-400" />
+                    <span className="text-white text-[9px] font-bold">{photo.likes.length}</span>
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }
