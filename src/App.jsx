@@ -697,7 +697,8 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadNotif, setUnreadNotif] = useState(0);
-  const [openDMWith, setOpenDMWith] = useState(null); // { id, full_name, bike_type, avatar_url }
+  const [openDMWith, setOpenDMWith] = useState(null);
+  const [mapSelectedRider, setMapSelectedRider] = useState(null); // { id, full_name, bike_type, avatar_url }
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
 
   // جلب الإشعارات عند التحميل
@@ -903,7 +904,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
-          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
+          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onRiderProfile={(id) => setMapSelectedRider(id)} />}
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} openDMWith={openDMWith} onDMOpened={() => setOpenDMWith(null)} />}
           {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
@@ -912,6 +913,17 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
+
+      {/* Global RiderProfile modal — خارج كل شي عشان fixed يشتغل */}
+      <AnimatePresence>
+        {mapSelectedRider && (
+          <RiderProfile
+            riderId={mapSelectedRider}
+            onClose={() => setMapSelectedRider(null)}
+            onDM={(u) => { setMapSelectedRider(null); setOpenDMWith(u); setActiveTab("chat"); }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Bottom Nav */}
       <div className="bg-gray-950/98 border-t border-gray-800/50 shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
@@ -949,11 +961,10 @@ function MapCentre({ loc }) {
   return null;
 }
 
-function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], onRiderDM }) {
+function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], onRiderDM, onRiderProfile }) {
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [selectedRiderProfile, setSelectedRiderProfile] = useState(null);
   const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
   const [alertType, setAlertType] = useState("pothole");
   const [alertDesc, setAlertDesc] = useState("");
@@ -1022,16 +1033,6 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
-
-      <AnimatePresence>
-        {selectedRiderProfile && (
-          <RiderProfile
-            riderId={selectedRiderProfile}
-            onClose={() => setSelectedRiderProfile(null)}
-            onDM={(u) => { onRiderDM?.(u); setSelectedRiderProfile(null); setSelected(null); }}
-          />
-        )}
-      </AnimatePresence>
 
       {/* My card */}
       <div className="absolute top-3 right-3 z-[1000]">
@@ -1148,7 +1149,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {riders.filter(r => r.lat && r.lng).map(r => (
           <Marker key={r.id} position={[r.lat, r.lng]}
             icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url)}
-            eventHandlers={{ click: () => setSelectedRiderProfile(r.id) }} />
+            eventHandlers={{ click: () => onRiderProfile?.(r.id) }} />
         ))}
 
         {/* التحذيرات */}
