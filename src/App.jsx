@@ -1186,19 +1186,202 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   );
 }
 
+/* ─── Rider Profile Modal ─── */
+function RiderProfile({ riderId, onClose }) {
+  const [rider, setRider] = useState(null);
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetch = async () => {
+      const { data: p } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", riderId)
+        .single();
+      if (p) setRider(p);
+
+      const { data: ph } = await supabase
+        .from("photos")
+        .select("*")
+        .eq("uploader_id", riderId)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      if (ph) setPhotos(ph);
+      setLoading(false);
+    };
+    fetch();
+  }, [riderId]);
+
+  const lvl = rider ? getLevel(rider.xp || 0) : null;
+  const prog = rider ? getLevelProgress(rider.xp || 0) : 0;
+  const nextLvl = lvl ? LEVELS[LEVELS.indexOf(lvl) + 1] : null;
+
+  const formatDist = (d) => {
+    if (!d) return "0";
+    return d >= 1000 ? `${(d / 1000).toFixed(1)}k` : d.toFixed(0);
+  };
+
+  const formatTime = (mins) => {
+    if (!mins) return "0";
+    if (mins < 60) return `${mins}د`;
+    return `${Math.floor(mins / 60)}س`;
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] flex flex-col"
+      style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+
+      <motion.div
+        initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+        transition={{ type: "spring", bounce: 0.15, duration: 0.5 }}
+        className="mt-auto bg-gray-950 rounded-t-3xl overflow-hidden"
+        style={{ maxHeight: "90vh" }}>
+
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 bg-gray-700 rounded-full" />
+        </div>
+
+        <div className="overflow-y-auto" style={{ maxHeight: "calc(90vh - 24px)" }}>
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                <Loader size={28} className="text-orange-500" />
+              </motion.div>
+            </div>
+          ) : !rider ? (
+            <div className="text-center py-16 text-gray-600">
+              <p>لم يُعثر على الدراج</p>
+            </div>
+          ) : (
+            <>
+              {/* Cover / Avatar */}
+              <div className="relative bg-gradient-to-b from-orange-900/30 to-gray-950 px-4 pt-4 pb-5 text-center">
+                <motion.button whileTap={{ scale: 0.9 }} onClick={onClose}
+                  className="absolute top-3 left-4 w-8 h-8 bg-gray-800/80 rounded-full flex items-center justify-center">
+                  <X size={16} className="text-gray-400" />
+                </motion.button>
+
+                <div className="w-24 h-24 bg-gray-800 border-4 border-orange-500 rounded-3xl overflow-hidden shadow-xl shadow-orange-500/30 mx-auto mb-3">
+                  {rider.avatar_url
+                    ? <img src={rider.avatar_url} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center text-4xl">🏍️</div>}
+                </div>
+
+                <h2 className="text-white font-black text-xl">{rider.full_name}</h2>
+                <p className="text-orange-400 text-sm mb-2">{rider.bike_type}</p>
+
+                {/* Level badge */}
+                {lvl && (
+                  <div className="inline-flex items-center gap-1.5 bg-gray-900 border border-gray-700 rounded-full px-3 py-1">
+                    <span className="text-base">{lvl.icon}</span>
+                    <span className="text-white text-xs font-bold">{lvl.name}</span>
+                    <span className="text-gray-500 text-xs">• {(rider.xp || 0).toLocaleString("ar")} XP</span>
+                  </div>
+                )}
+
+                {/* XP Progress */}
+                {lvl && (
+                  <div className="mt-3 mx-4">
+                    <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                      <motion.div className="h-full rounded-full"
+                        style={{ background: lvl.color || "#f97316" }}
+                        initial={{ width: 0 }} animate={{ width: `${prog}%` }}
+                        transition={{ duration: 1, ease: "easeOut" }} />
+                    </div>
+                    {nextLvl && (
+                      <p className="text-gray-600 text-[10px] text-left mt-0.5">{nextLvl.name} →</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Stats */}
+              <div className="grid grid-cols-4 gap-2 px-4 mb-4">
+                {[
+                  { icon: "⚡", label: "أعلى سرعة", value: `${rider.top_speed || 0}`, unit: "كم/س" },
+                  { icon: "📍", label: "المسافة", value: formatDist(rider.total_distance), unit: "كم" },
+                  { icon: "🏍️", label: "الرحلات", value: rider.total_rides || 0, unit: "" },
+                  { icon: "⏱️", label: "وقت الركوب", value: formatTime(rider.total_riding_time), unit: "" },
+                ].map((s, i) => (
+                  <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.06 }}
+                    className="bg-gray-900 border border-gray-800 rounded-2xl p-2.5 text-center">
+                    <div className="text-lg mb-0.5">{s.icon}</div>
+                    <p className="text-white font-black text-base leading-none">{s.value}<span className="text-[10px] text-gray-500 ml-0.5">{s.unit}</span></p>
+                    <p className="text-gray-600 text-[9px] mt-0.5">{s.label}</p>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Badges */}
+              {(rider.badges || []).length > 0 && (
+                <div className="px-4 mb-4">
+                  <p className="text-gray-500 text-xs text-right mb-2">الشارات</p>
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    {(rider.badges || []).map(b => {
+                      const def = BADGES_DEF.find(x => x.id === b);
+                      if (!def) return null;
+                      return (
+                        <div key={b} className="flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-xl px-2.5 py-1.5">
+                          <span className="text-sm">{def.icon}</span>
+                          <span className="text-gray-300 text-xs">{def.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Photos grid */}
+              {photos.length > 0 && (
+                <div className="px-4 mb-4">
+                  <p className="text-gray-500 text-xs text-right mb-2">لقطاته ({photos.length})</p>
+                  <div className="grid grid-cols-3 gap-0.5 rounded-2xl overflow-hidden">
+                    {photos.map(photo => (
+                      <div key={photo.id} className="aspect-square overflow-hidden bg-gray-900">
+                        <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="h-6" />
+            </>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 /* ─── Riders Tab ─── */
 function RidersTab({ riders }) {
+  const [selectedRider, setSelectedRider] = useState(null);
+
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
       className="absolute inset-0 overflow-y-auto p-4">
+
+      <AnimatePresence>
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} />}
+      </AnimatePresence>
+
       <h2 className="text-white font-black text-lg mb-1 text-right">السائقون <span className="text-orange-500">المتصلون</span></h2>
       <p className="text-gray-500 text-xs mb-4 text-right">{riders.filter(r => r.status === "online").length} من {riders.length} متصل</p>
       <div className="space-y-3">
         {riders.map((r, i) => (
           <motion.div key={r.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
-            className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex items-center gap-3">
+            className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex items-center gap-3 cursor-pointer active:opacity-70"
+            onClick={() => setSelectedRider(r.id)}>
             <div className="relative shrink-0">
-              <div className="w-12 h-12 bg-gray-800 rounded-2xl flex items-center justify-center text-xl">🏍️</div>
+              <div className="w-12 h-12 bg-gray-800 rounded-2xl flex items-center justify-center text-xl overflow-hidden">
+                {r.avatar_url ? <img src={r.avatar_url} className="w-full h-full object-cover" /> : "🏍️"}
+              </div>
               <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-gray-900 ${r.status === "online" ? "bg-green-500" : "bg-gray-600"}`} />
             </div>
             <div className="flex-1 text-right">
@@ -1222,8 +1405,9 @@ function RidersTab({ riders }) {
 function LeaderboardTab({ profile }) {
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState("xp"); // xp | speed | distance
+  const [category, setCategory] = useState("xp");
   const [myRank, setMyRank] = useState(null);
+  const [selectedRider, setSelectedRider] = useState(null);
 
   useEffect(() => {
     const fetch = async () => {
@@ -1278,6 +1462,10 @@ function LeaderboardTab({ profile }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="absolute inset-0 overflow-y-auto bg-gray-950">
+
+      <AnimatePresence>
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} />}
+      </AnimatePresence>
 
       {/* Header */}
       <div className="relative overflow-hidden bg-gradient-to-b from-yellow-900/30 to-gray-950 pt-6 pb-4 px-4">
@@ -1365,7 +1553,8 @@ function LeaderboardTab({ profile }) {
               <motion.div key={r.id}
                 initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.04 }}
-                className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isMe
+                onClick={() => setSelectedRider(r.id)}
+                className={`flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer active:opacity-70 ${isMe
                   ? "bg-orange-500/10 border-orange-500/40"
                   : "bg-gray-900 border-gray-800"}`}>
                 {/* Rank */}
@@ -2025,6 +2214,7 @@ function PhotosTab({ profile }) {
   const [showUpload, setShowUpload] = useState(false);
   const [fullscreen, setFullscreen] = useState(null);
   const [toast, setToast] = useState(null);
+  const [selectedRider, setSelectedRider] = useState(null);
   const fileRef = useRef(null);
 
   const showToast = (msg, type = "success") => {
@@ -2118,6 +2308,10 @@ function PhotosTab({ profile }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="absolute inset-0 flex flex-col bg-gray-950">
+
+      <AnimatePresence>
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} />}
+      </AnimatePresence>
 
       {/* Toast */}
       <AnimatePresence>
@@ -2247,7 +2441,8 @@ function PhotosTab({ profile }) {
                 transition={{ delay: i * 0.04 }}
                 className="bg-gray-950">
                 {/* Post header */}
-                <div className="flex items-center gap-3 px-4 py-3">
+                <div className="flex items-center gap-3 px-4 py-3 cursor-pointer active:opacity-70"
+                  onClick={() => setSelectedRider(photo.uploader_id)}>
                   <div className="flex-1 text-right">
                     <p className="text-white font-bold text-sm">{photo.uploader_name}</p>
                     <p className="text-gray-500 text-xs">{timeAgo(photo.created_at)}</p>
