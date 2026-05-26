@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+supabase.exe 
+supabase-go.exe 
+supabase.tar.gz 
+supabase/.temp/ 
