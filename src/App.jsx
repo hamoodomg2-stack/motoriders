@@ -697,6 +697,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadNotif, setUnreadNotif] = useState(0);
+  const [openDMWith, setOpenDMWith] = useState(null); // { id, full_name, bike_type, avatar_url }
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
 
   // جلب الإشعارات عند التحميل
@@ -902,12 +903,12 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
-          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} />}
-          {activeTab === "riders" && <RidersTab key="riders" riders={riders} />}
-          {activeTab === "chat" && <ChatTab key="chat" profile={profile} />}
-          {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} />}
+          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
+          {activeTab === "riders" && <RidersTab key="riders" riders={riders} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
+          {activeTab === "chat" && <ChatTab key="chat" profile={profile} openDMWith={openDMWith} onDMOpened={() => setOpenDMWith(null)} />}
+          {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
           {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
-          {activeTab === "photos" && <PhotosTab key="photos" profile={profile} />}
+          {activeTab === "photos" && <PhotosTab key="photos" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
@@ -948,10 +949,11 @@ function MapCentre({ loc }) {
   return null;
 }
 
-function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [] }) {
+function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], onRiderDM }) {
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [selectedRiderProfile, setSelectedRiderProfile] = useState(null);
   const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
   const [alertType, setAlertType] = useState("pothole");
   const [alertDesc, setAlertDesc] = useState("");
@@ -1021,7 +1023,15 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
 
-      {/* My card */}
+      <AnimatePresence>
+        {selectedRiderProfile && (
+          <RiderProfile
+            riderId={selectedRiderProfile}
+            onClose={() => setSelectedRiderProfile(null)}
+            onDM={(u) => { onRiderDM?.(u); setSelectedRiderProfile(null); }}
+          />
+        )}
+      </AnimatePresence>
       <div className="absolute top-3 right-3 z-[1000]">
         <div className="bg-gray-950/95 backdrop-blur border border-orange-500/40 rounded-2xl px-3 py-2 text-right shadow-xl">
           <p className="text-white font-bold text-sm">{profile?.full_name || "أنت"}</p>
@@ -1113,15 +1123,29 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {selected && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
             className="absolute bottom-20 left-3 right-3 z-[1000]">
-            <div className="bg-gray-950/98 border border-orange-500/40 rounded-2xl p-4 flex items-center gap-3 backdrop-blur shadow-xl">
-              <button onClick={() => setSelected(null)} className="text-gray-500 text-xl leading-none">✕</button>
-              <div className="flex-1 text-right">
-                <p className="text-white font-bold text-sm">{selected.full_name}</p>
-                <p className="text-gray-500 text-xs">{selected.bike_type}</p>
+            <div className="bg-gray-950/98 border border-orange-500/40 rounded-2xl p-4 backdrop-blur shadow-xl">
+              <div className="flex items-center gap-3 mb-3">
+                <button onClick={() => setSelected(null)} className="text-gray-500 text-xl leading-none">✕</button>
+                <div className="flex-1 text-right">
+                  <p className="text-white font-bold text-sm">{selected.full_name}</p>
+                  <p className="text-gray-500 text-xs">{selected.bike_type}</p>
+                </div>
+                <div className="text-center bg-orange-500/10 border border-orange-500/30 rounded-xl px-3 py-2">
+                  <p className="text-orange-500 font-black text-xl">{selected.current_speed || 0}</p>
+                  <p className="text-gray-600 text-xs">كم/س</p>
+                </div>
               </div>
-              <div className="text-center bg-orange-500/10 border border-orange-500/30 rounded-xl px-3 py-2">
-                <p className="text-orange-500 font-black text-xl">{selected.current_speed || 0}</p>
-                <p className="text-gray-600 text-xs">كم/س</p>
+              <div className="flex gap-2">
+                <motion.button whileTap={{ scale: 0.95 }}
+                  onClick={() => setSelectedRiderProfile(selected.id)}
+                  className="flex-1 bg-gray-800 border border-gray-700 text-gray-300 font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1">
+                  <User size={13} /> البروفايل
+                </motion.button>
+                <motion.button whileTap={{ scale: 0.95 }}
+                  onClick={() => { onRiderDM?.(selected); setSelected(null); }}
+                  className="flex-1 bg-orange-500 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 shadow-lg shadow-orange-500/30">
+                  <MessageCircle size={13} /> رسالة
+                </motion.button>
               </div>
             </div>
           </motion.div>
@@ -1187,7 +1211,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 }
 
 /* ─── Rider Profile Modal ─── */
-function RiderProfile({ riderId, onClose }) {
+function RiderProfile({ riderId, onClose, onDM }) {
   const [rider, setRider] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1297,6 +1321,18 @@ function RiderProfile({ riderId, onClose }) {
                     )}
                   </div>
                 )}
+
+                {/* DM Button */}
+                {onDM && rider && (
+                  <div className="px-4 mt-4">
+                    <motion.button whileTap={{ scale: 0.97 }}
+                      onClick={() => { onDM(rider); onClose(); }}
+                      className="w-full bg-orange-500 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-orange-500/30">
+                      <MessageCircle size={18} />
+                      رسالة خاصة
+                    </motion.button>
+                  </div>
+                )}
               </div>
 
               {/* Stats */}
@@ -1360,7 +1396,7 @@ function RiderProfile({ riderId, onClose }) {
 }
 
 /* ─── Riders Tab ─── */
-function RidersTab({ riders }) {
+function RidersTab({ riders, onDM }) {
   const [selectedRider, setSelectedRider] = useState(null);
 
   return (
@@ -1368,7 +1404,7 @@ function RidersTab({ riders }) {
       className="absolute inset-0 overflow-y-auto p-4">
 
       <AnimatePresence>
-        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} />}
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} />}
       </AnimatePresence>
 
       <h2 className="text-white font-black text-lg mb-1 text-right">السائقون <span className="text-orange-500">المتصلون</span></h2>
@@ -1402,7 +1438,7 @@ function RidersTab({ riders }) {
 }
 
 /* ─── Leaderboard Tab ─── */
-function LeaderboardTab({ profile }) {
+function LeaderboardTab({ profile, onDM }) {
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("xp");
@@ -1464,7 +1500,7 @@ function LeaderboardTab({ profile }) {
       className="absolute inset-0 overflow-y-auto bg-gray-950">
 
       <AnimatePresence>
-        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} />}
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} />}
       </AnimatePresence>
 
       {/* Header */}
@@ -1666,38 +1702,41 @@ function LeaderboardTab({ profile }) {
 
 
 
-function ChatTab({ profile }) {
+/* ─── DM Conversation Screen ─── */
+function DMConversation({ profile, otherUser, onBack }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
 
-  // جلب الرسائل القديمة
+  const conversationId = [profile.id, otherUser.id].sort().join("_");
+
   useEffect(() => {
     const fetchMsgs = async () => {
       const { data } = await supabase
-        .from("messages")
+        .from("direct_messages")
         .select("*")
+        .eq("conversation_id", conversationId)
         .order("created_at", { ascending: true })
-        .limit(50);
+        .limit(100);
       if (data) setMsgs(data);
       setLoading(false);
+      // mark as read
+      await supabase.from("direct_messages")
+        .update({ read: true })
+        .eq("conversation_id", conversationId)
+        .eq("receiver_id", profile.id);
     };
     fetchMsgs();
 
-    // Realtime — استقبال الرسائل فوراً
-    const channel = supabase
-      .channel("messages-realtime")
+    const ch = supabase.channel(`dm-${conversationId}`)
       .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
-          setMsgs(prev => [...prev, payload.new]);
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
+        { event: "INSERT", schema: "public", table: "direct_messages",
+          filter: `conversation_id=eq.${conversationId}` },
+        (payload) => setMsgs(prev => [...prev, payload.new])
+      ).subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [conversationId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1707,56 +1746,78 @@ function ChatTab({ profile }) {
     if (!input.trim()) return;
     const text = input.trim();
     setInput("");
-
-    await supabase.from("messages").insert({
+    await supabase.from("direct_messages").insert({
+      conversation_id: conversationId,
       sender_id: profile.id,
       sender_name: profile.full_name,
+      receiver_id: otherUser.id,
       content: text,
+      read: false,
+    });
+    // Push notification
+    await sendPushToUser({
+      userId: otherUser.id,
+      title: `💬 ${profile.full_name}`,
+      message: text,
+      tag: "dm",
+      url: "/",
     });
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-800 shrink-0">
-        <p className="text-white font-bold text-sm text-right">دردشة المجموعة</p>
-        <p className="text-green-400 text-xs text-right">مباشر</p>
+    <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+      transition={{ type: "spring", bounce: 0.1, duration: 0.4 }}
+      className="absolute inset-0 flex flex-col bg-gray-950 z-10">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800 shrink-0">
+        <motion.button whileTap={{ scale: 0.9 }} onClick={onBack}
+          className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center shrink-0">
+          <ArrowRight size={18} className="text-white" />
+        </motion.button>
+        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-orange-500 shrink-0">
+          {otherUser.avatar_url
+            ? <img src={otherUser.avatar_url} className="w-full h-full object-cover" />
+            : <div className="w-full h-full bg-gray-800 flex items-center justify-center">🏍️</div>}
+        </div>
+        <div className="flex-1 text-right">
+          <p className="text-white font-bold text-sm">{otherUser.full_name}</p>
+          <p className="text-gray-500 text-xs">{otherUser.bike_type}</p>
+        </div>
       </div>
 
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-              <Loader size={28} className="text-orange-500" />
+              <Loader size={24} className="text-orange-500" />
             </motion.div>
           </div>
         ) : msgs.length === 0 ? (
-          <div className="flex items-center justify-center h-full flex-col gap-2">
-            <MessageCircle size={40} className="text-gray-700" />
-            <p className="text-gray-600 text-sm">لا توجد رسائل بعد</p>
-            <p className="text-gray-700 text-xs">كن أول من يكتب! 🏍️</p>
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-600">
+            <MessageCircle size={36} className="opacity-30" />
+            <p className="text-sm">ابدأ المحادثة مع {otherUser.full_name}</p>
           </div>
-        ) : (
-          msgs.map(m => {
-            const mine = m.sender_id === profile.id;
-            return (
-              <div key={m.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}>
-                <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center text-sm shrink-0 self-end">🏍️</div>
-                <div className={`max-w-[75%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
-                  {!mine && <p className="text-orange-400 text-xs mb-1 font-semibold">{m.sender_name}</p>}
-                  <div className={`px-4 py-2.5 rounded-2xl text-sm ${mine ? "bg-orange-500 text-white rounded-tr-sm" : "bg-gray-900 text-gray-200 border border-gray-800 rounded-tl-sm"}`}>
-                    {m.content}
-                  </div>
-                  <p className="text-gray-600 text-[10px] mt-1">
-                    {new Date(m.created_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
-                  </p>
+        ) : msgs.map(m => {
+          const mine = m.sender_id === profile.id;
+          return (
+            <div key={m.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}>
+              <div className={`max-w-[78%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                <div className={`px-4 py-2.5 rounded-2xl text-sm ${mine ? "bg-orange-500 text-white rounded-tr-sm" : "bg-gray-900 text-gray-200 border border-gray-800 rounded-tl-sm"}`}>
+                  {m.content}
                 </div>
+                <p className="text-gray-600 text-[10px] mt-1">
+                  {new Date(m.created_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
+                  {mine && <span className="ml-1">{m.read ? " ✓✓" : " ✓"}</span>}
+                </p>
               </div>
-            );
-          })
-        )}
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
+      {/* Input */}
       <div className="p-3 border-t border-gray-800 flex gap-2 shrink-0">
         <motion.button whileTap={{ scale: 0.9 }} onClick={send}
           className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/40">
@@ -1764,12 +1825,258 @@ function ChatTab({ profile }) {
         </motion.button>
         <input value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && send()}
-          placeholder="اكتب رسالة..." dir="rtl"
+          placeholder={`راسل ${otherUser.full_name}...`} dir="rtl"
           className="flex-1 bg-gray-900 border border-gray-800 text-white placeholder-gray-600 rounded-2xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
       </div>
     </motion.div>
   );
 }
+
+/* ─── Chat Tab — عامة + خاصة ─── */
+function ChatTab({ profile, openDMWith, onDMOpened }) {
+  const [tab, setTab] = useState("group"); // "group" | "dms"
+  const [dmConversation, setDmConversation] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [unreadDMs, setUnreadDMs] = useState(0);
+
+  // افتح DM مباشرة إذا جاء request من الخريطة
+  useEffect(() => {
+    if (openDMWith) {
+      setDmConversation(openDMWith);
+      setTab("dms");
+      onDMOpened?.();
+    }
+  }, [openDMWith]);
+
+  // جلب المحادثات الخاصة
+  const fetchConversations = async () => {
+    const { data } = await supabase
+      .from("direct_messages")
+      .select("*")
+      .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
+      .order("created_at", { ascending: false });
+
+    if (!data) return;
+    // تجميع بـ conversation_id
+    const map = {};
+    data.forEach(m => {
+      if (!map[m.conversation_id]) map[m.conversation_id] = m;
+    });
+    const convos = Object.values(map);
+    setConversations(convos);
+    setUnreadDMs(data.filter(m => m.receiver_id === profile.id && !m.read).length);
+  };
+
+  useEffect(() => {
+    fetchConversations();
+    const ch = supabase.channel("dms-list-rt")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "direct_messages",
+          filter: `receiver_id=eq.${profile.id}` },
+        () => fetchConversations()
+      ).subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [profile.id]);
+
+  // Group Chat state
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(true);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    const fetchMsgs = async () => {
+      const { data } = await supabase.from("messages").select("*")
+        .order("created_at", { ascending: true }).limit(50);
+      if (data) setMsgs(data);
+      setLoading(false);
+    };
+    fetchMsgs();
+    const ch = supabase.channel("messages-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => setMsgs(prev => [...prev, payload.new]))
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, []);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+
+  const send = async () => {
+    if (!input.trim()) return;
+    const text = input.trim(); setInput("");
+    await supabase.from("messages").insert({
+      sender_id: profile.id, sender_name: profile.full_name, content: text,
+    });
+  };
+
+  // إذا فيه محادثة خاصة مفتوحة
+  if (dmConversation) {
+    return (
+      <DMConversation
+        profile={profile}
+        otherUser={dmConversation}
+        onBack={() => { setDmConversation(null); fetchConversations(); }}
+      />
+    );
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 flex flex-col">
+
+      {/* Tab switcher */}
+      <div className="flex bg-gray-900 border-b border-gray-800 shrink-0">
+        {[
+          { id: "group", label: "💬 عامة" },
+          { id: "dms", label: "📩 خاصة", badge: unreadDMs },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex-1 py-3 text-sm font-bold relative transition-all ${tab === t.id ? "text-orange-500 border-b-2 border-orange-500" : "text-gray-500"}`}>
+            {t.label}
+            {t.badge > 0 && (
+              <span className="absolute top-2 right-[calc(50%-28px)] w-4 h-4 bg-red-500 rounded-full text-white text-[9px] font-black flex items-center justify-center">
+                {t.badge > 9 ? "9+" : t.badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Group Chat */}
+      {tab === "group" && (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                  <Loader size={28} className="text-orange-500" />
+                </motion.div>
+              </div>
+            ) : msgs.length === 0 ? (
+              <div className="flex items-center justify-center h-full flex-col gap-2">
+                <MessageCircle size={40} className="text-gray-700" />
+                <p className="text-gray-600 text-sm">لا توجد رسائل بعد</p>
+              </div>
+            ) : msgs.map(m => {
+              const mine = m.sender_id === profile.id;
+              return (
+                <div key={m.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}>
+                  <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center text-sm shrink-0 self-end">🏍️</div>
+                  <div className={`max-w-[75%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                    {!mine && <p className="text-orange-400 text-xs mb-1 font-semibold">{m.sender_name}</p>}
+                    <div className={`px-4 py-2.5 rounded-2xl text-sm ${mine ? "bg-orange-500 text-white rounded-tr-sm" : "bg-gray-900 text-gray-200 border border-gray-800 rounded-tl-sm"}`}>
+                      {m.content}
+                    </div>
+                    <p className="text-gray-600 text-[10px] mt-1">
+                      {new Date(m.created_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef} />
+          </div>
+          <div className="p-3 border-t border-gray-800 flex gap-2 shrink-0">
+            <motion.button whileTap={{ scale: 0.9 }} onClick={send}
+              className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/40">
+              <ArrowRight size={18} className="text-white rotate-180" />
+            </motion.button>
+            <input value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && send()}
+              placeholder="اكتب رسالة..." dir="rtl"
+              className="flex-1 bg-gray-900 border border-gray-800 text-white placeholder-gray-600 rounded-2xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none" />
+          </div>
+        </div>
+      )}
+
+      {/* DMs List */}
+      {tab === "dms" && (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {conversations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-600">
+              <MessageCircle size={40} className="opacity-20" />
+              <p className="text-sm">لا توجد محادثات خاصة بعد</p>
+              <p className="text-xs">اضغط على دراج من الخريطة أو السائقين لتراسله</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-800/50">
+              {conversations.map(async (conv) => {
+                const otherId = conv.sender_id === profile.id ? conv.receiver_id : conv.sender_id;
+                return null; // سيتعامل معها DMList
+              })}
+            </div>
+          )}
+          <DMList profile={profile} conversations={conversations} onOpen={setDmConversation} />
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ─── DM List ─── */
+function DMList({ profile, conversations, onOpen }) {
+  const [users, setUsers] = useState({});
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const ids = [...new Set(conversations.map(c =>
+        c.sender_id === profile.id ? c.receiver_id : c.sender_id
+      ))];
+      if (!ids.length) return;
+      const { data } = await supabase.from("profiles")
+        .select("id, full_name, bike_type, avatar_url").in("id", ids);
+      if (data) {
+        const map = {};
+        data.forEach(u => map[u.id] = u);
+        setUsers(map);
+      }
+    };
+    fetchUsers();
+  }, [conversations]);
+
+  if (!conversations.length) return null;
+
+  // deduplicate by conversation_id
+  const seen = new Set();
+  const unique = conversations.filter(c => {
+    if (seen.has(c.conversation_id)) return false;
+    seen.add(c.conversation_id); return true;
+  });
+
+  return (
+    <div className="divide-y divide-gray-800/50">
+      {unique.map(conv => {
+        const otherId = conv.sender_id === profile.id ? conv.receiver_id : conv.sender_id;
+        const other = users[otherId];
+        const unread = conv.receiver_id === profile.id && !conv.read;
+        if (!other) return null;
+        return (
+          <motion.div key={conv.conversation_id}
+            whileTap={{ backgroundColor: "rgba(249,115,22,0.05)" }}
+            onClick={() => onOpen(other)}
+            className="flex items-center gap-3 px-4 py-3.5 cursor-pointer">
+            <div className="text-right flex-1 min-w-0">
+              <div className="flex items-center justify-end gap-2">
+                {unread && <div className="w-2 h-2 bg-orange-500 rounded-full shrink-0" />}
+                <p className={`text-sm font-bold truncate ${unread ? "text-white" : "text-gray-300"}`}>
+                  {other.full_name}
+                </p>
+              </div>
+              <p className="text-gray-500 text-xs truncate">{conv.content}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-gray-700 shrink-0">
+              {other.avatar_url
+                ? <img src={other.avatar_url} className="w-full h-full object-cover" />
+                : <div className="w-full h-full bg-gray-800 flex items-center justify-center text-lg">🏍️</div>}
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+
 
 /* ─── Groups Tab ─── */
 
@@ -2204,7 +2511,7 @@ function GroupsTab({ profile }) {
 }
 
 /* ─── Photos Tab — Instagram Style ─── */
-function PhotosTab({ profile }) {
+function PhotosTab({ profile, onDM }) {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -2310,7 +2617,7 @@ function PhotosTab({ profile }) {
       className="absolute inset-0 flex flex-col bg-gray-950">
 
       <AnimatePresence>
-        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} />}
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} />}
       </AnimatePresence>
 
       {/* Toast */}
