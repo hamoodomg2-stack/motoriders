@@ -1069,13 +1069,24 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         }
       } catch {}
       try {
-        const query = `[out:json][timeout:30];(node["highway"="speed_camera"](50.0,5.9,55.1,15.1);node["enforcement"="maxspeed"](50.0,5.9,55.1,15.1););out body;`;
-        const res = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query });
+        // بوكس ألمانيا كاملة
+        const query = `[out:json][timeout:60];(node["highway"="speed_camera"](47.3,5.8,55.1,15.0);node["enforcement"="maxspeed"](47.3,5.8,55.1,15.0););out body;`;
+        const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        const data = (json.elements || []).map(e => ({ id: e.id, lat: e.lat, lng: e.lon, maxspeed: e.tags?.maxspeed || "" }));
+        const data = (json.elements || []).map(e => ({
+          id: e.id,
+          lat: e.lat,
+          lng: e.lon,
+          maxspeed: e.tags?.maxspeed || e.tags?.["maxspeed:advisory"] || "",
+        }));
+        console.log(`✅ Cameras loaded: ${data.length}`);
         setCameras(data);
         localStorage.setItem("moto_cameras_de", JSON.stringify({ data, ts: Date.now() }));
-      } catch (e) { console.warn("Cameras:", e); }
+      } catch (e) {
+        console.error("❌ Cameras fetch error:", e);
+      }
     };
     fetchCameras();
   }, []);
