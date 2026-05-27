@@ -189,12 +189,30 @@ const MOCK_RIDERS = [
 ];
 
 /* ─── Leaflet marker icon ─── */
-const createRiderIcon = (name, speed, isOnline, avatarUrl) => {
+const createRiderIcon = (name, speed, isOnline, avatarUrl, pingEmoji) => {
   const glowColor = isOnline ? "#f97316" : "#6b7280";
   const ringColor = isOnline ? "#f97316" : "#4b5563";
   return L.divIcon({
     html: `
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;">
+        ${pingEmoji ? `
+        <div style="
+          position:absolute;top:-36px;left:50%;transform:translateX(-50%);
+          background:rgba(0,0,0,0.85);border:2px solid #f97316;
+          border-radius:50%;width:36px;height:36px;
+          display:flex;align-items:center;justify-content:center;
+          font-size:20px;
+          animation:pingPop 0.4s cubic-bezier(0.34,1.56,0.64,1);
+          box-shadow:0 0 16px #f9731688;
+        ">${pingEmoji}</div>
+        <div style="
+          position:absolute;top:-2px;left:50%;transform:translateX(-50%);
+          width:0;height:0;
+          border-left:6px solid transparent;
+          border-right:6px solid transparent;
+          border-top:8px solid #f97316;
+        "></div>
+        ` : ""}
         <div style="position:relative;width:50px;height:50px;border-radius:50%;
           background:${isOnline ? "conic-gradient(#f97316,#fb923c,#f97316)" : "conic-gradient(#4b5563,#6b7280,#4b5563)"};
           padding:3px;box-shadow:0 0 ${isOnline ? "16px 3px" : "0px"} ${glowColor}88;">
@@ -218,9 +236,16 @@ const createRiderIcon = (name, speed, isOnline, avatarUrl) => {
             overflow:hidden;text-overflow:ellipsis;max-width:70px;">${name || "—"}</div>
           <div style="color:${isOnline ? "#f97316" : "#6b7280"};font-size:10px;font-weight:600;">${speed} كم/س</div>
         </div>
-      </div>`,
-    iconSize: [60, 88],
-    iconAnchor: [30, 88],
+      </div>
+      <style>
+        @keyframes pingPop {
+          0% { transform:translateX(-50%) scale(0); opacity:0; }
+          60% { transform:translateX(-50%) scale(1.3); opacity:1; }
+          100% { transform:translateX(-50%) scale(1); opacity:1; }
+        }
+      </style>`,
+    iconSize: [60, pingEmoji ? 130 : 88],
+    iconAnchor: [30, pingEmoji ? 130 : 88],
     popupAnchor: [0, -90],
     className: "",
   });
@@ -699,7 +724,23 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadNotif, setUnreadNotif] = useState(0);
   const [openDMWith, setOpenDMWith] = useState(null);
-  const [mapSelectedRider, setMapSelectedRider] = useState(null); // { id, full_name, bike_type, avatar_url }
+  const [mapSelectedRider, setMapSelectedRider] = useState(null);
+
+  const sendPing = async (toRider, pingType) => {
+    await supabase.from("quick_pings").insert({
+      from_id: profile.id,
+      from_name: profile.full_name,
+      to_id: toRider.id,
+      emoji: pingType.emoji,
+      type: pingType.label,
+    });
+    await sendPushToUser({
+      userId: toRider.id,
+      title: `${pingType.emoji} ${profile.full_name}`,
+      message: pingType.label,
+      tag: "ping",
+    });
+  }; // { id, full_name, bike_type, avatar_url }
   const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
 
   // جلب الإشعارات عند التحميل
@@ -906,11 +947,11 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
           {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onRiderProfile={(id) => setMapSelectedRider(id)} />}
-          {activeTab === "riders" && <RidersTab key="riders" riders={riders} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
+          {activeTab === "riders" && <RidersTab key="riders" riders={riders} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onPing={sendPing} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} openDMWith={openDMWith} onDMOpened={() => setOpenDMWith(null)} />}
-          {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
+          {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onPing={sendPing} />}
           {activeTab === "groups" && <GroupsTab key="groups" profile={profile} />}
-          {activeTab === "photos" && <PhotosTab key="photos" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} />}
+          {activeTab === "photos" && <PhotosTab key="photos" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onPing={sendPing} />}
           {activeTab === "profile" && <ProfileTab key="profile" profile={profile} speed={speed} gpsStatus={gpsStatus} tracking={tracking} toggleGPS={toggleGPS} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
@@ -948,6 +989,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
             riderId={mapSelectedRider}
             onClose={() => setMapSelectedRider(null)}
             onDM={(u) => { setMapSelectedRider(null); setOpenDMWith(u); setActiveTab("chat"); }}
+            onPing={(rider, pingType) => { sendPing(rider, pingType); setMapSelectedRider(null); }}
           />
         )}
       </AnimatePresence>
@@ -966,7 +1008,72 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [activePings, setActivePings] = useState({}); // { riderId: { emoji, id } }
+  const [myPingMenu, setMyPingMenu] = useState(null); // riderId
   const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
+
+  const PING_TYPES = [
+    { id: "horn",  emoji: "📯", label: "زمور" },
+    { id: "wave",  emoji: "👋", label: "تحية" },
+    { id: "call",  emoji: "🤙", label: "كيفك" },
+    { id: "go",    emoji: "⚡", label: "يلا" },
+  ];
+
+  // استقبال الـ pings
+  useEffect(() => {
+    const ch = supabase.channel("pings-rt")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "quick_pings" },
+        (payload) => {
+          const ping = payload.new;
+          // أظهر الأنيميشن فوق الدراج المُرسَل إليه
+          const targetId = ping.to_id === profile.id ? "me" : ping.to_id;
+          const fromId = ping.from_id;
+          setActivePings(prev => ({
+            ...prev,
+            [fromId]: { emoji: ping.emoji, ts: Date.now() }
+          }));
+          setTimeout(() => {
+            setActivePings(prev => {
+              const next = { ...prev };
+              delete next[fromId];
+              return next;
+            });
+          }, 3000);
+        }
+      ).subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [profile.id]);
+
+  const sendPing = async (toRider, pingType) => {
+    setMyPingMenu(null);
+    await supabase.from("quick_pings").insert({
+      from_id: profile.id,
+      from_name: profile.full_name,
+      to_id: toRider.id,
+      emoji: pingType.emoji,
+      type: pingType.id,
+    });
+    // Push notification
+    await sendPushToUser({
+      userId: toRider.id,
+      title: `${pingType.emoji} ${profile.full_name}`,
+      message: pingType.label,
+      tag: "ping",
+    });
+    // أظهر الأنيميشن على الدراج المُرسَل إليه محلياً
+    setActivePings(prev => ({
+      ...prev,
+      [toRider.id]: { emoji: pingType.emoji, ts: Date.now() }
+    }));
+    setTimeout(() => {
+      setActivePings(prev => {
+        const next = { ...prev };
+        delete next[toRider.id];
+        return next;
+      });
+    }, 3000);
+  };
   const [alertType, setAlertType] = useState("pothole");
   const [alertDesc, setAlertDesc] = useState("");
   const [addingAlert, setAddingAlert] = useState(false);
@@ -1143,13 +1250,14 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
         {/* موقعي */}
         {loc && !stealth && (
-          <Marker position={[loc.lat, loc.lng]} icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url)} />
+          <Marker position={[loc.lat, loc.lng]}
+            icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
         )}
 
         {/* بقية الدراجين */}
         {riders.filter(r => r.lat && r.lng).map(r => (
           <Marker key={r.id} position={[r.lat, r.lng]}
-            icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url)}
+            icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url, activePings[r.id]?.emoji)}
             eventHandlers={{ click: () => onRiderProfile?.(r.id) }} />
         ))}
 
@@ -1182,7 +1290,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 }
 
 /* ─── Rider Profile Modal ─── */
-function RiderProfile({ riderId, onClose, onDM }) {
+function RiderProfile({ riderId, onClose, onDM, onPing }) {
   const [rider, setRider] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1295,13 +1403,35 @@ function RiderProfile({ riderId, onClose, onDM }) {
 
                 {/* DM Button */}
                 {onDM && rider && (
-                  <div className="px-4 mt-4">
+                  <div className="px-4 mt-3">
                     <motion.button whileTap={{ scale: 0.97 }}
                       onClick={() => { onDM(rider); onClose(); }}
                       className="w-full bg-orange-500 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-orange-500/30">
                       <MessageCircle size={18} />
                       رسالة خاصة
                     </motion.button>
+                  </div>
+                )}
+
+                {/* Quick Pings */}
+                {onPing && rider && (
+                  <div className="px-4 mt-3">
+                    <p className="text-gray-500 text-xs text-right mb-2">إشارة سريعة</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { emoji: "📯", label: "زمور" },
+                        { emoji: "👋", label: "تحية" },
+                        { emoji: "🤙", label: "كيفك" },
+                        { emoji: "⚡", label: "يلا" },
+                      ].map(p => (
+                        <motion.button key={p.emoji} whileTap={{ scale: 0.85 }}
+                          onClick={() => { onPing(rider, p); onClose(); }}
+                          className="bg-gray-900 border border-gray-700 rounded-2xl py-2.5 flex flex-col items-center gap-1 hover:border-orange-500/50 transition-all">
+                          <span className="text-2xl">{p.emoji}</span>
+                          <span className="text-gray-400 text-[10px]">{p.label}</span>
+                        </motion.button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1368,7 +1498,7 @@ function RiderProfile({ riderId, onClose, onDM }) {
 }
 
 /* ─── Riders Tab ─── */
-function RidersTab({ riders, onDM }) {
+function RidersTab({ riders, onDM, onPing }) {
   const [selectedRider, setSelectedRider] = useState(null);
 
   return (
@@ -1376,7 +1506,7 @@ function RidersTab({ riders, onDM }) {
       className="absolute inset-0 overflow-y-auto p-4">
 
       <AnimatePresence>
-        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} />}
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} onPing={onPing} />}
       </AnimatePresence>
 
       <h2 className="text-white font-black text-lg mb-1 text-right">السائقون <span className="text-orange-500">المتصلون</span></h2>
@@ -1410,7 +1540,7 @@ function RidersTab({ riders, onDM }) {
 }
 
 /* ─── Leaderboard Tab ─── */
-function LeaderboardTab({ profile, onDM }) {
+function LeaderboardTab({ profile, onDM, onPing }) {
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("xp");
@@ -1472,7 +1602,7 @@ function LeaderboardTab({ profile, onDM }) {
       className="absolute inset-0 overflow-y-auto bg-gray-950">
 
       <AnimatePresence>
-        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} />}
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} onPing={onPing} />}
       </AnimatePresence>
 
       {/* Header */}
@@ -2483,7 +2613,7 @@ function GroupsTab({ profile }) {
 }
 
 /* ─── Photos Tab — Instagram Style ─── */
-function PhotosTab({ profile, onDM }) {
+function PhotosTab({ profile, onDM, onPing }) {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -2589,7 +2719,7 @@ function PhotosTab({ profile, onDM }) {
       className="absolute inset-0 flex flex-col bg-gray-950">
 
       <AnimatePresence>
-        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} />}
+        {selectedRider && <RiderProfile riderId={selectedRider} onClose={() => setSelectedRider(null)} onDM={onDM} onPing={onPing} />}
       </AnimatePresence>
 
       {/* Toast */}
