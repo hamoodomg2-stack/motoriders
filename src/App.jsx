@@ -1205,30 +1205,16 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
   const createCameraIcon = (maxspeed) => L.divIcon({
     html: `<div style="
-      display:flex;flex-direction:column;align-items:center;gap:2px;
-    ">
-      <div style="
-        background:rgba(220,38,38,0.95);
-        border:2px solid #fbbf24;
-        border-radius:8px;
-        width:30px;height:30px;
-        display:flex;align-items:center;justify-content:center;
-        font-size:16px;
-        box-shadow:0 0 10px rgba(220,38,38,0.7);
-      ">📷</div>
-      ${maxspeed ? `<div style="
-        background:rgba(0,0,0,0.85);
-        border:1px solid #fbbf24;
-        border-radius:4px;
-        padding:1px 4px;
-        color:#fbbf24;
-        font-size:9px;
-        font-weight:700;
-        white-space:nowrap;
-      ">${maxspeed}</div>` : ""}
-    </div>`,
-    iconSize: [30, maxspeed ? 48 : 34],
-    iconAnchor: [15, maxspeed ? 48 : 34],
+      background:rgba(220,38,38,0.9);
+      border:1.5px solid #fbbf24;
+      border-radius:6px;
+      width:24px;height:24px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:13px;
+      box-shadow:0 0 6px rgba(220,38,38,0.5);
+    ">📷${maxspeed ? `<span style="position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fbbf24;font-size:8px;font-weight:700;padding:1px 3px;border-radius:3px;white-space:nowrap">${maxspeed}</span>` : ""}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
     className: "",
   });
 
@@ -1460,12 +1446,20 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         <RecenterMap loc={loc} trigger={recenterTrigger} />
         <ZoomListener onZoom={setMapZoom} />
 
-        {/* الرادارات — تظهر عند zoom ≥ 13 فقط */}
-        {mapZoom >= 13 && cameras.map(cam => (
-          <Marker key={`cam-${cam.id}`}
-            position={[cam.lat, cam.lng]}
-            icon={createCameraIcon(cam.maxspeed)} />
-        ))}
+        {/* الرادارات — تظهر عند zoom ≥ 14 فقط وفي نطاق الشاشة */}
+        {mapZoom >= 14 && cameras
+          .filter(cam => {
+            if (!loc) return false;
+            const dist = getDistance(loc.lat, loc.lng, cam.lat, cam.lng);
+            return dist < 30000; // فقط في نطاق 30 كم
+          })
+          .slice(0, 100) // حد أقصى 100 رادار على الشاشة
+          .map(cam => (
+            <Marker key={`cam-${cam.id}`}
+              position={[cam.lat, cam.lng]}
+              icon={createCameraIcon(cam.maxspeed)} />
+          ))
+        }
       </MapContainer>
     </motion.div>
   );
