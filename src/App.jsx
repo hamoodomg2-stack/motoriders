@@ -1016,6 +1016,17 @@ function RecenterMap({ loc, trigger }) {
   return null;
 }
 
+function ZoomListener({ onZoom }) {
+  const map = useMap();
+  useEffect(() => {
+    onZoom(map.getZoom());
+    const handler = () => onZoom(map.getZoom());
+    map.on("zoomend", handler);
+    return () => map.off("zoomend", handler);
+  }, [map]);
+  return null;
+}
+
 function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], onRiderDM, onRiderProfile }) {
   // آخر موقع محفوظ
   const getLastLoc = () => {
@@ -1043,6 +1054,48 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   };
   const currentStyle = MAP_STYLES[mapStyle];
   const [recenterTrigger, setRecenterTrigger] = useState(0);
+  const [cameras, setCameras] = useState([]);
+  const [mapZoom, setMapZoom] = useState(15);
+  const cameraWarnedRef = useRef(new Set());
+
+  // جلب الرادارات من OpenStreetMap
+  useEffect(() => {
+    const fetchCameras = async () => {
+      try {
+        const cached = localStorage.getItem("moto_cameras_de");
+        if (cached) {
+          const { data, ts } = JSON.parse(cached);
+          if (Date.now() - ts < 7 * 24 * 60 * 60 * 1000) { setCameras(data); return; }
+        }
+      } catch {}
+      try {
+        const query = `[out:json][timeout:30];(node["highway"="speed_camera"](50.0,5.9,55.1,15.1);node["enforcement"="maxspeed"](50.0,5.9,55.1,15.1););out body;`;
+        const res = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query });
+        const json = await res.json();
+        const data = (json.elements || []).map(e => ({ id: e.id, lat: e.lat, lng: e.lon, maxspeed: e.tags?.maxspeed || "" }));
+        setCameras(data);
+        localStorage.setItem("moto_cameras_de", JSON.stringify({ data, ts: Date.now() }));
+      } catch (e) { console.warn("Cameras:", e); }
+    };
+    fetchCameras();
+  }, []);
+
+  // تنبيه صوتي عند الاقتراب من رادار < 300م
+  useEffect(() => {
+    if (!loc || !cameras.length) return;
+    cameras.forEach(cam => {
+      const dist = getDistance(loc.lat, loc.lng, cam.lat, cam.lng);
+      if (dist < 300 && !cameraWarnedRef.current.has(cam.id)) {
+        cameraWarnedRef.current.add(cam.id);
+        const msg = new SpeechSynthesisUtterance(
+          `تحذير رادار بعد ${Math.round(dist)} متر${cam.maxspeed ? `، الحد ${cam.maxspeed}` : ""}`
+        );
+        msg.lang = "ar-SA"; msg.rate = 0.9;
+        window.speechSynthesis?.speak(msg);
+      }
+      if (dist > 600) cameraWarnedRef.current.delete(cam.id);
+    });
+  }, [loc, cameras]);
 
   const PING_TYPES = [
     { id: "horn",  emoji: "📯", label: "زمور" },
@@ -1142,6 +1195,35 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       className: "",
     });
   };
+
+  const createCameraIcon = (maxspeed) => L.divIcon({
+    html: `<div style="
+      display:flex;flex-direction:column;align-items:center;gap:2px;
+    ">
+      <div style="
+        background:rgba(220,38,38,0.95);
+        border:2px solid #fbbf24;
+        border-radius:8px;
+        width:30px;height:30px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:16px;
+        box-shadow:0 0 10px rgba(220,38,38,0.7);
+      ">📷</div>
+      ${maxspeed ? `<div style="
+        background:rgba(0,0,0,0.85);
+        border:1px solid #fbbf24;
+        border-radius:4px;
+        padding:1px 4px;
+        color:#fbbf24;
+        font-size:9px;
+        font-weight:700;
+        white-space:nowrap;
+      ">${maxspeed}</div>` : ""}
+    </div>`,
+    iconSize: [30, maxspeed ? 48 : 34],
+    iconAnchor: [15, maxspeed ? 48 : 34],
+    className: "",
+  });
 
   // أيقونة مكان انطلاق الرحلة
   const createRideStartIcon = (rideName) => L.divIcon({
@@ -1256,6 +1338,14 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
             <span className="text-red-500 text-[9px]">تحذير</span>
           </div>
         )}
+
+        {/* عداد الرادارات */}
+        {cameras.length > 0 && (
+          <div className="w-11 h-11 bg-yellow-500/20 border border-yellow-500/40 rounded-2xl flex flex-col items-center justify-center">
+            <span className="text-yellow-400 font-black text-sm">{cameras.length > 999 ? `${Math.round(cameras.length/1000)}k` : cameras.length}</span>
+            <span className="text-yellow-500 text-[9px]">رادار</span>
+          </div>
+        )}
       </div>
 
       {/* نموذج إضافة تحذير */}
@@ -1361,6 +1451,14 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
         {loc && <MapCentre loc={loc} />}
         <RecenterMap loc={loc} trigger={recenterTrigger} />
+        <ZoomListener onZoom={setMapZoom} />
+
+        {/* الرادارات — تظهر عند zoom ≥ 13 فقط */}
+        {mapZoom >= 13 && cameras.map(cam => (
+          <Marker key={`cam-${cam.id}`}
+            position={[cam.lat, cam.lng]}
+            icon={createCameraIcon(cam.maxspeed)} />
+        ))}
       </MapContainer>
     </motion.div>
   );
