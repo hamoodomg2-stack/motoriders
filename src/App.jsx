@@ -1027,16 +1027,21 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         (payload) => {
           const ping = payload.new;
           // أظهر الأنيميشن فوق الدراج المُرسَل إليه
-          const targetId = ping.to_id === profile.id ? "me" : ping.to_id;
-          const fromId = ping.from_id;
+          const showOnId = ping.to_id === profile.id ? "me" : ping.to_id;
+          // وأيضاً فوق المُرسِل (عند المستقبل يشوفه على الخريطة)
+          const targetId = ping.from_id === profile.id ? ping.to_id : ping.from_id;
+          const displayId = ping.to_id;
+
           setActivePings(prev => ({
             ...prev,
-            [fromId]: { emoji: ping.emoji, ts: Date.now() }
+            [ping.to_id]: { emoji: ping.emoji, ts: Date.now() },
+            [ping.from_id]: { emoji: ping.emoji, ts: Date.now() },
           }));
           setTimeout(() => {
             setActivePings(prev => {
               const next = { ...prev };
-              delete next[fromId];
+              delete next[ping.to_id];
+              delete next[ping.from_id];
               return next;
             });
           }, 3000);
@@ -1047,21 +1052,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
   const sendPing = async (toRider, pingType) => {
     setMyPingMenu(null);
-    await supabase.from("quick_pings").insert({
-      from_id: profile.id,
-      from_name: profile.full_name,
-      to_id: toRider.id,
-      emoji: pingType.emoji,
-      type: pingType.id,
-    });
-    // Push notification
-    await sendPushToUser({
-      userId: toRider.id,
-      title: `${pingType.emoji} ${profile.full_name}`,
-      message: pingType.label,
-      tag: "ping",
-    });
-    // أظهر الأنيميشن على الدراج المُرسَل إليه محلياً
+    // أظهر الأنيميشن محلياً فوراً على الدراج المُرسَل إليه
     setActivePings(prev => ({
       ...prev,
       [toRider.id]: { emoji: pingType.emoji, ts: Date.now() }
@@ -1073,6 +1064,20 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         return next;
       });
     }, 3000);
+
+    await supabase.from("quick_pings").insert({
+      from_id: profile.id,
+      from_name: profile.full_name,
+      to_id: toRider.id,
+      emoji: pingType.emoji,
+      type: pingType.id,
+    });
+    await sendPushToUser({
+      userId: toRider.id,
+      title: `${pingType.emoji} ${profile.full_name}`,
+      message: pingType.label,
+      tag: "ping",
+    });
   };
   const [alertType, setAlertType] = useState("pothole");
   const [alertDesc, setAlertDesc] = useState("");
@@ -1250,13 +1255,17 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
         {/* موقعي */}
         {loc && !stealth && (
-          <Marker position={[loc.lat, loc.lng]}
+          <Marker
+            key={`me-${activePings["me"]?.ts || 0}`}
+            position={[loc.lat, loc.lng]}
             icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
         )}
 
         {/* بقية الدراجين */}
         {riders.filter(r => r.lat && r.lng).map(r => (
-          <Marker key={r.id} position={[r.lat, r.lng]}
+          <Marker
+            key={`${r.id}-${activePings[r.id]?.ts || 0}`}
+            position={[r.lat, r.lng]}
             icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url, activePings[r.id]?.emoji)}
             eventHandlers={{ click: () => onRiderProfile?.(r.id) }} />
         ))}
