@@ -1068,8 +1068,12 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           if (Date.now() - ts < 7 * 24 * 60 * 60 * 1000) { setCameras(data); return; }
         }
       } catch {}
+      // انتظر الموقع أو استخدم موقع مخزّن
+      const savedLoc = (() => { try { return JSON.parse(localStorage.getItem("moto_last_loc")); } catch { return null; } })();
+      const userLat = loc?.lat || savedLoc?.lat || 51.0;
+      const userLng = loc?.lng || savedLoc?.lng || 10.0;
       try {
-        const res = await fetch("/api/cameras");
+        const res = await fetch(`/api/cameras?lat=${userLat}&lng=${userLng}&size=1.5`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
         const data = json.cameras || [];
