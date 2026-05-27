@@ -361,6 +361,8 @@ function useGPS(profileId, stealth) {
         const { latitude: lat, longitude: lng, speed: spd } = pos.coords;
         const kmh = spd ? Math.round(spd * 3.6) : 0;
         setLoc({ lat, lng }); setSpeed(kmh); setStatus("active"); setError(null);
+        // احفظ آخر موقع
+        try { localStorage.setItem("moto_last_loc", JSON.stringify({ lat, lng })); } catch {}
         // حساب المسافة
         if (lastRef.current) {
           const d = getDistance(lastRef.current.lat, lastRef.current.lng, lat, lng);
@@ -1015,7 +1017,16 @@ function RecenterMap({ loc, trigger }) {
 }
 
 function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], onRiderDM, onRiderProfile }) {
-  const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
+  // آخر موقع محفوظ
+  const getLastLoc = () => {
+    try {
+      const saved = localStorage.getItem("moto_last_loc");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  };
+  const lastLoc = getLastLoc();
+  const center = loc ? [loc.lat, loc.lng] : lastLoc ? [lastLoc.lat, lastLoc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
   const [activePings, setActivePings] = useState({}); // { riderId: { emoji, id } }
