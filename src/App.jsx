@@ -1246,10 +1246,11 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {sos && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-xs font-bold">جاري الإرسال...</motion.p>}
       </div>
 
-      <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#111" }} zoomControl={false}>
+      <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#0a0a0a" }} zoomControl={false}>
         <TileLayer
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          attribution=""
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+          subdomains="abcd"
           maxZoom={19}
         />
 
