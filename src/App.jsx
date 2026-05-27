@@ -1058,7 +1058,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   const [mapZoom, setMapZoom] = useState(15);
   const cameraWarnedRef = useRef(new Set());
 
-  // جلب الرادارات من OpenStreetMap عبر proxy يدعم CORS
+  // جلب الرادارات عبر Vercel API proxy
   useEffect(() => {
     const fetchCameras = async () => {
       try {
@@ -1069,44 +1069,15 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         }
       } catch {}
       try {
-        const query = `[out:json][timeout:60];(node["highway"="speed_camera"](47.3,5.8,55.1,15.0);node["enforcement"="maxspeed"](47.3,5.8,55.1,15.0););out body;`;
-        // نستخدم overpass.kumi.systems اللي يدعم CORS
-        const res = await fetch("https://overpass.kumi.systems/api/interpreter", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `data=${encodeURIComponent(query)}`,
-        });
+        const res = await fetch("/api/cameras");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        const data = (json.elements || []).map(e => ({
-          id: e.id,
-          lat: e.lat,
-          lng: e.lon,
-          maxspeed: e.tags?.maxspeed || e.tags?.["maxspeed:advisory"] || "",
-        }));
+        const data = json.cameras || [];
         console.log(`✅ Cameras loaded: ${data.length}`);
         setCameras(data);
         localStorage.setItem("moto_cameras_de", JSON.stringify({ data, ts: Date.now() }));
       } catch (e) {
         console.error("❌ Cameras error:", e.message);
-        // fallback — جرب mirror ثاني
-        try {
-          const query = `[out:json][timeout:60];(node["highway"="speed_camera"](47.3,5.8,55.1,15.0);node["enforcement"="maxspeed"](47.3,5.8,55.1,15.0););out body;`;
-          const res = await fetch("https://maps.mail.ru/osm/tools/overpass/api/interpreter", {
-            method: "POST",
-            body: `data=${encodeURIComponent(query)}`,
-          });
-          const json = await res.json();
-          const data = (json.elements || []).map(e => ({
-            id: e.id, lat: e.lat, lng: e.lon,
-            maxspeed: e.tags?.maxspeed || "",
-          }));
-          console.log(`✅ Cameras (fallback): ${data.length}`);
-          setCameras(data);
-          localStorage.setItem("moto_cameras_de", JSON.stringify({ data, ts: Date.now() }));
-        } catch (e2) {
-          console.error("❌ Fallback error:", e2.message);
-        }
       }
     };
     fetchCameras();
