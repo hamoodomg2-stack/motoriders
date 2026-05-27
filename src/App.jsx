@@ -1004,13 +1004,34 @@ function MapCentre({ loc }) {
   return null;
 }
 
+function RecenterMap({ loc, trigger }) {
+  const map = useMap();
+  useEffect(() => {
+    if (loc && trigger) {
+      map.flyTo([loc.lat, loc.lng], 16, { duration: 1.2, easeLinearity: 0.25 });
+    }
+  }, [trigger]);
+  return null;
+}
+
 function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], onRiderDM, onRiderProfile }) {
   const center = loc ? [loc.lat, loc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
   const [activePings, setActivePings] = useState({}); // { riderId: { emoji, id } }
   const [myPingMenu, setMyPingMenu] = useState(null); // riderId
+  const [mapStyle, setMapStyle] = useState("dark");
+  const [showStylePicker, setShowStylePicker] = useState(false);
+  const mapRef = useRef(null);
   const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
+
+  const MAP_STYLES = {
+    dark:      { label: "ليلي",        icon: "🌑", url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", subdomains: "abcd", bg: "#0a0a0a" },
+    light:     { label: "نهاري",       icon: "☀️", url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: "abcd", bg: "#e8e8e8" },
+    satellite: { label: "قمر صناعي",  icon: "🛰️", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", subdomains: "", bg: "#111" },
+  };
+  const currentStyle = MAP_STYLES[mapStyle];
+  const [recenterTrigger, setRecenterTrigger] = useState(0);
 
   const PING_TYPES = [
     { id: "horn",  emoji: "📯", label: "زمور" },
@@ -1171,16 +1192,49 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
       {/* Right controls */}
       <div className="absolute right-3 top-1/2 -translate-y-1/2 z-[1000] flex flex-col gap-2">
+
+        {/* زر موقعي — Apple Maps style */}
+        <motion.button whileTap={{ scale: 0.88 }}
+          onClick={() => { if (loc) setRecenterTrigger(t => t + 1); }}
+          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${loc ? "bg-gray-900/95 border-gray-700 active:bg-orange-500" : "bg-gray-900/50 border-gray-800 opacity-50"}`}>
+          <Navigation size={18} className={tracking ? "text-orange-400" : "text-gray-400"} style={{ fill: tracking ? "rgba(249,115,22,0.2)" : "none" }} />
+        </motion.button>
+
+        {/* GPS toggle */}
         <motion.button whileTap={{ scale: 0.9 }} onClick={toggleGPS}
-          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${tracking ? "bg-orange-500 border-orange-400 shadow-orange-500/40" : "bg-gray-900 border-gray-700"}`}>
+          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${tracking ? "bg-orange-500 border-orange-400 shadow-orange-500/40" : "bg-gray-900/95 border-gray-700"}`}>
           {gpsStatus === "searching"
             ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={17} className="text-orange-400" /></motion.div>
-            : <Navigation size={17} className={tracking ? "text-white" : "text-gray-500"} />}
+            : <span className="text-sm font-black">{tracking ? "📡" : "📡"}</span>}
         </motion.button>
+
+        {/* Map Style picker */}
+        <div className="relative">
+          <motion.button whileTap={{ scale: 0.9 }}
+            onClick={() => setShowStylePicker(!showStylePicker)}
+            className="w-11 h-11 bg-gray-900/95 border border-gray-700 rounded-2xl flex items-center justify-center shadow-lg text-lg">
+            {currentStyle.icon}
+          </motion.button>
+          <AnimatePresence>
+            {showStylePicker && (
+              <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
+                className="absolute right-14 top-0 flex gap-2">
+                {Object.entries(MAP_STYLES).map(([key, style]) => (
+                  <motion.button key={key} whileTap={{ scale: 0.9 }}
+                    onClick={() => { setMapStyle(key); setShowStylePicker(false); }}
+                    className={`flex flex-col items-center gap-1 px-3 py-2 rounded-2xl border shadow-lg transition-all whitespace-nowrap ${mapStyle === key ? "bg-orange-500 border-orange-400 text-white" : "bg-gray-900/95 border-gray-700 text-gray-300"}`}>
+                    <span className="text-xl">{style.icon}</span>
+                    <span className="text-[10px] font-bold">{style.label}</span>
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* زر إضافة تحذير */}
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowAddAlert(!showAddAlert)}
-          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${showAddAlert ? "bg-red-500 border-red-400" : "bg-gray-900 border-gray-700"}`}>
+          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${showAddAlert ? "bg-red-500 border-red-400" : "bg-gray-900/95 border-gray-700"}`}>
           <span className="text-lg">{showAddAlert ? "✕" : "⚠️"}</span>
         </motion.button>
 
@@ -1246,11 +1300,12 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {sos && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-xs font-bold">جاري الإرسال...</motion.p>}
       </div>
 
-      <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: "#0a0a0a" }} zoomControl={false}>
+      <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: currentStyle.bg }} zoomControl={false}>
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          subdomains="abcd"
+          key={mapStyle}
+          url={currentStyle.url}
+          attribution=""
+          subdomains={currentStyle.subdomains || "abc"}
           maxZoom={19}
         />
 
@@ -1294,6 +1349,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         ))}
 
         {loc && <MapCentre loc={loc} />}
+        <RecenterMap loc={loc} trigger={recenterTrigger} />
       </MapContainer>
     </motion.div>
   );
