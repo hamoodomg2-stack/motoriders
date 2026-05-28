@@ -854,16 +854,24 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
         <div className="w-8" />
         <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
-        <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
-          className="relative">
-          <Bell size={20} className="text-gray-400" />
-          {unreadNotif > 0 && (
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
-              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
-              <span className="text-white text-[9px] font-black">{unreadNotif > 9 ? "9+" : unreadNotif}</span>
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 bg-green-500/15 border border-green-500/20 rounded-full px-2 py-0.5">
+            <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full" />
             </motion.div>
-          )}
-        </motion.button>
+            <span className="text-green-400 text-xs font-bold">{riders.filter(r => r.status === "online").length}</span>
+          </div>
+          <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
+            className="relative">
+            <Bell size={20} className="text-gray-400" />
+            {unreadNotif > 0 && (
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                <span className="text-white text-[9px] font-black">{unreadNotif > 9 ? "9+" : unreadNotif}</span>
+              </motion.div>
+            )}
+          </motion.button>
+        </div>
       </div>
 
       {/* GPS Error */}
@@ -1241,45 +1249,21 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
 
-      {/* ══════════════════════════════════════
-          TOP STATUS BAR — نحيف وشفاف
-      ══════════════════════════════════════ */}
-      <div className="absolute top-0 left-0 right-0 z-[1000] px-3 pt-2 pb-1.5">
-        <div className="flex items-center justify-between bg-slate-900/40 backdrop-blur-md rounded-2xl px-4 py-2 border border-white/10"
-          style={{ boxShadow: "0 2px 16px rgba(0,0,0,0.2)" }}>
-
-          {/* يسار — عدد السائقين */}
-          <div className="flex items-center gap-1">
-            <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
-              <div className="w-1 h-1 bg-green-400 rounded-full" />
-            </motion.div>
-            <span className="text-green-400 text-[10px] font-semibold">
-              {riders.filter(r => r.status === "online").length} سائق
-            </span>
-          </div>
-
-          {/* وسط — السرعة */}
-          <div className="flex items-baseline gap-1">
-            <span className="text-white font-black text-lg leading-none">{speed}</span>
+      {/* السرعة — مربع صغير شفاف يمين */}
+      <div className="absolute top-14 right-3 z-[1000]">
+        <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-xl px-3 py-1.5 text-right">
+          <div className="flex items-baseline gap-1 justify-end">
+            <span className="text-white font-black text-xl leading-none">{speed}</span>
             <span className="text-gray-500 text-[9px]">كم/س</span>
           </div>
-
-          {/* يمين — الاسم + GPS */}
-          <div className="flex items-center gap-1.5">
-            <div className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all ${
-              gpsStatus === "active" ? "bg-orange-500/20 text-orange-300 border-orange-400/20" :
-              gpsStatus === "searching" ? "bg-yellow-500/15 text-yellow-300 border-yellow-400/15" :
-              "bg-white/8 text-gray-500 border-white/8"
-            }`}>
-              {gpsStatus === "searching"
-                ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={8} /></motion.div>
-                : <Navigation size={8} />}
-              <span>{gpsStatus === "active" ? "نشط" : gpsStatus === "searching" ? "..." : "GPS"}</span>
+          {gpsStatus === "active" && (
+            <div className="flex items-center justify-end gap-1 mt-0.5">
+              <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity }}>
+                <div className="w-1 h-1 bg-orange-400 rounded-full" />
+              </motion.div>
+              <span className="text-orange-400 text-[8px]">نشط</span>
             </div>
-            <span className="text-white/80 text-[10px] font-semibold max-w-[52px] truncate">
-              {profile?.full_name?.split(" ")[0] || "أنت"}
-            </span>
-          </div>
+          )}
         </div>
       </div>
 
