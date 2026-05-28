@@ -1249,46 +1249,46 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
       {/* ══════════════════════════════════════
           TOP STATUS BAR — نحيف وشفاف
       ══════════════════════════════════════ */}
-      <div className="absolute top-0 left-0 right-0 z-[1000] px-4 pt-2 pb-2">
-        <div className="flex items-center justify-between bg-black/35 backdrop-blur-xl rounded-2xl px-4 py-2.5 border border-white/8"
-          style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.3)" }}>
+      <div className="absolute top-0 left-0 right-0 z-[1000] px-3 pt-2 pb-1.5">
+        <div className="flex items-center justify-between bg-slate-900/40 backdrop-blur-md rounded-2xl px-4 py-2 border border-white/10"
+          style={{ boxShadow: "0 2px 16px rgba(0,0,0,0.2)" }}>
 
           {/* يسار — السائقون + وضع الخفاء */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <motion.button whileTap={{ scale: 0.9 }} onClick={() => setStealth(!stealth)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${stealth ? "bg-purple-500/40 text-purple-200 border border-purple-400/40" : "bg-white/10 text-gray-300 border border-white/10"}`}>
-              {stealth ? <EyeOff size={11} /> : <Eye size={11} />}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${stealth ? "bg-purple-500/30 text-purple-200 border border-purple-400/30" : "bg-white/8 text-gray-400 border border-white/8"}`}>
+              {stealth ? <EyeOff size={9} /> : <Eye size={9} />}
               {stealth ? "مخفي" : "ظاهر"}
             </motion.button>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                <div className="w-1.5 h-1.5 bg-green-400 rounded-full" />
+                <div className="w-1 h-1 bg-green-400 rounded-full" />
               </motion.div>
-              <span className="text-green-400 text-[11px] font-bold">
-                {riders.filter(r => r.status === "online").length} سائق
+              <span className="text-green-400 text-[10px] font-semibold">
+                {riders.filter(r => r.status === "online").length}
               </span>
             </div>
           </div>
 
           {/* وسط — السرعة */}
-          <div className="flex flex-col items-center">
-            <span className="text-white font-black text-xl leading-none">{speed}</span>
-            <span className="text-gray-400 text-[9px] font-medium tracking-wider">كم/س</span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-white font-black text-lg leading-none">{speed}</span>
+            <span className="text-gray-500 text-[9px]">كم/س</span>
           </div>
 
-          {/* يمين — الاسم + حالة GPS */}
-          <div className="flex items-center gap-2">
-            <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
-              gpsStatus === "active" ? "bg-orange-500/30 text-orange-300 border-orange-400/30" :
-              gpsStatus === "searching" ? "bg-yellow-500/20 text-yellow-300 border-yellow-400/20" :
-              "bg-white/10 text-gray-400 border-white/10"
+          {/* يمين — الاسم + GPS */}
+          <div className="flex items-center gap-1.5">
+            <div className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all ${
+              gpsStatus === "active" ? "bg-orange-500/20 text-orange-300 border-orange-400/20" :
+              gpsStatus === "searching" ? "bg-yellow-500/15 text-yellow-300 border-yellow-400/15" :
+              "bg-white/8 text-gray-500 border-white/8"
             }`}>
               {gpsStatus === "searching"
-                ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={10} /></motion.div>
-                : <Navigation size={10} style={{ fill: gpsStatus === "active" ? "rgba(249,115,22,0.3)" : "none" }} />}
+                ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={8} /></motion.div>
+                : <Navigation size={8} />}
               <span>{gpsStatus === "active" ? "نشط" : gpsStatus === "searching" ? "..." : "GPS"}</span>
             </div>
-            <span className="text-white text-[11px] font-bold max-w-[60px] truncate text-right">
+            <span className="text-white/80 text-[10px] font-semibold max-w-[52px] truncate">
               {profile?.full_name?.split(" ")[0] || "أنت"}
             </span>
           </div>
