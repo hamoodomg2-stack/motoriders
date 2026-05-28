@@ -334,21 +334,17 @@ function useGPS(profileId, stealth) {
   const watchRef = useRef(null);
   const intervalRef = useRef(null);
   const lastRef = useRef(null);
+  const locRef = useRef(null); // نسخة ref من loc لتجنب re-renders
 
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
     await supabase.from("locations").upsert(
-      {
-        profile_id: profileId,
-        lat, lng,
-        speed: Math.round(spd * 3.6),
-        updated_at: new Date().toISOString()
-      },
+      { profile_id: profileId, lat, lng, speed: Math.round(spd * 3.6), updated_at: new Date().toISOString() },
       { onConflict: "profile_id" }
     );
   }, [profileId, stealth]);
 
-  const distanceRef = useRef(0); // متر مقطوعة في الجلسة
+  const distanceRef = useRef(0);
   const sessionTopSpeedRef = useRef(0);
 
   const start = useCallback(() => {
@@ -356,13 +352,27 @@ function useGPS(profileId, stealth) {
     setStatus("searching");
     distanceRef.current = 0;
     sessionTopSpeedRef.current = 0;
+
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        const { latitude: lat, longitude: lng, speed: spd } = pos.coords;
+        const { latitude: lat, longitude: lng, speed: spd, accuracy } = pos.coords;
         const kmh = spd ? Math.round(spd * 3.6) : 0;
-        setLoc({ lat, lng }); setSpeed(kmh); setStatus("active"); setError(null);
-        // احفظ آخر موقع
-        try { localStorage.setItem("moto_last_loc", JSON.stringify({ lat, lng })); } catch {}
+
+        // تجنب الرمش — فقط حدّث الـ state إذا تغير الموقع بشكل ملحوظ
+        const prev = locRef.current;
+        const moved = !prev || getDistance(prev.lat, prev.lng, lat, lng) > 5;
+
+        if (moved) {
+          locRef.current = { lat, lng };
+          setLoc({ lat, lng });
+          try { localStorage.setItem("moto_last_loc", JSON.stringify({ lat, lng })); } catch {}
+        }
+
+        // السرعة دائماً تتحدث
+        setSpeed(kmh);
+        setStatus("active");
+        setError(null);
+
         // حساب المسافة
         if (lastRef.current) {
           const d = getDistance(lastRef.current.lat, lastRef.current.lng, lat, lng);
@@ -375,11 +385,13 @@ function useGPS(profileId, stealth) {
         setStatus("error");
         setError(err.code === 1 ? "يرجى السماح بالوصول للموقع من إعدادات المتصفح" : "تعذّر تحديد موقعك");
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
+
+    // رفع الموقع كل 5 ثواني
     intervalRef.current = setInterval(() => {
       if (lastRef.current) upload(lastRef.current.lat, lastRef.current.lng, lastRef.current.speed / 3.6);
-    }, 10000);
+    }, 5000);
   }, [upload]);
 
   const stop = useCallback(async () => {
@@ -805,13 +817,38 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
 
   useEffect(() => {
     const ch = supabase.channel("rt-locations")
-      .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, ({ new: n }) => {
-        setRiders(prev => prev.map(r => r.id === n.profile_id
-          ? { ...r, lat: n.lat, lng: n.lng, current_speed: n.speed, status: "online" } : r));
+      .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, async ({ eventType, new: n, old: o }) => {
+        if (eventType === "DELETE") {
+          // دراج أوقف GPS — أزله من الخريطة
+          setRiders(prev => prev.map(r => r.id === (o?.profile_id)
+            ? { ...r, lat: null, lng: null, status: "offline" } : r));
+          return;
+        }
+        if (!n?.profile_id || n.profile_id === profile.id) return;
+
+        setRiders(prev => {
+          const exists = prev.find(r => r.id === n.profile_id);
+          if (exists) {
+            // حدّث الموجود
+            return prev.map(r => r.id === n.profile_id
+              ? { ...r, lat: n.lat, lng: n.lng, current_speed: n.speed, status: "online", location_updated_at: n.updated_at }
+              : r);
+          } else {
+            // دراج جديد — جيب بياناته
+            supabase.from("profiles").select("*").eq("id", n.profile_id).single()
+              .then(({ data: p }) => {
+                if (p) setRiders(prev2 => [...prev2, {
+                  ...p, lat: n.lat, lng: n.lng, current_speed: n.speed,
+                  status: "online", location_updated_at: n.updated_at
+                }]);
+              });
+            return prev;
+          }
+        });
       })
       .subscribe(s => setConnected(s === "SUBSCRIBED"));
     return () => supabase.removeChannel(ch);
-  }, []);
+  }, [profile.id]);
 
   // بعد channel locations أضف هذا
   useEffect(() => {
@@ -1422,12 +1459,12 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
             icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
         )}
 
-        {/* بقية الدراجين */}
-        {riders.filter(r => r.lat && r.lng).map(r => (
+        {/* بقية الدراجين — key ثابت على الـ id فقط لمنع الرمش */}
+        {riders.filter(r => r.lat && r.lng && r.status === "online").map(r => (
           <Marker
-            key={`${r.id}-${activePings[r.id]?.ts || 0}`}
+            key={r.id}
             position={[r.lat, r.lng]}
-            icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url, activePings[r.id]?.emoji)}
+            icon={createRiderIcon(r.full_name, r.current_speed || 0, true, r.avatar_url, activePings[r.id]?.emoji)}
             eventHandlers={{ click: () => onRiderProfile?.(r.id) }} />
         ))}
 
