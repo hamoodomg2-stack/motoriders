@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -219,7 +219,7 @@ const createRiderIcon = (name, speed, isOnline, avatarUrl, pingEmoji) => {
           <div style="width:100%;height:100%;border-radius:50%;background:#111;
             display:flex;align-items:center;justify-content:center;overflow:hidden;">
             ${avatarUrl
-        ? `<img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
+        ? `<img src="${avatarUrl}" crossorigin="anonymous" loading="eager" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
         : `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24"
                   fill="none" stroke="${glowColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -1081,6 +1081,19 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     light:     { label: "نهاري",       icon: "☀️", url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: "abcd", bg: "#e8e8e8" },
     satellite: { label: "قمر صناعي",  icon: "🛰️", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", subdomains: "", bg: "#111" },
   };
+
+  // cache الأيقونات — لا تُعاد إلا لما يتغير الـ avatar أو الـ ping
+  const iconCache = useRef({});
+  const getCachedIcon = useCallback((id, name, spd, isOnline, avatarUrl, pingEmoji) => {
+    const key = `${id}-${pingEmoji || ""}-${avatarUrl || ""}`;
+    if (!iconCache.current[key] || iconCache.current[key].speed !== spd) {
+      iconCache.current[key] = {
+        icon: createRiderIcon(name, spd, isOnline, avatarUrl, pingEmoji),
+        speed: spd,
+      };
+    }
+    return iconCache.current[key].icon;
+  }, []);
   const currentStyle = MAP_STYLES[mapStyle];
   const [recenterTrigger, setRecenterTrigger] = useState(0);
   const [cameras, setCameras] = useState([]);
@@ -1454,17 +1467,17 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {/* موقعي */}
         {loc && !stealth && (
           <Marker
-            key={`me-${activePings["me"]?.ts || 0}`}
+            key="me"
             position={[loc.lat, loc.lng]}
-            icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
+            icon={getCachedIcon("me", profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
         )}
 
-        {/* بقية الدراجين — key ثابت على الـ id فقط لمنع الرمش */}
+        {/* بقية الدراجين */}
         {riders.filter(r => r.lat && r.lng && r.status === "online").map(r => (
           <Marker
             key={r.id}
             position={[r.lat, r.lng]}
-            icon={createRiderIcon(r.full_name, r.current_speed || 0, true, r.avatar_url, activePings[r.id]?.emoji)}
+            icon={getCachedIcon(r.id, r.full_name, r.current_speed || 0, true, r.avatar_url, activePings[r.id]?.emoji)}
             eventHandlers={{ click: () => onRiderProfile?.(r.id) }} />
         ))}
 
