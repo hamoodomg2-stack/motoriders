@@ -1254,144 +1254,194 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
 
-      {/* My card */}
-      <div className="absolute top-3 right-3 z-[1000]">
-        <div className="bg-gray-950/95 backdrop-blur border border-orange-500/40 rounded-2xl px-3 py-2 text-right shadow-xl">
-          <p className="text-white font-bold text-sm">{profile?.full_name || "أنت"}</p>
-          <p className="text-orange-500 font-black text-base">{speed} كم/س</p>
+      {/* ══════════════════════════════════════
+          TOP STATUS BAR — نحيف وشفاف
+      ══════════════════════════════════════ */}
+      <div className="absolute top-0 left-0 right-0 z-[1000] px-4 pt-2 pb-2">
+        <div className="flex items-center justify-between bg-black/35 backdrop-blur-xl rounded-2xl px-4 py-2.5 border border-white/8"
+          style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.3)" }}>
+
+          {/* يسار — السائقون + وضع الخفاء */}
+          <div className="flex items-center gap-2.5">
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setStealth(!stealth)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${stealth ? "bg-purple-500/40 text-purple-200 border border-purple-400/40" : "bg-white/10 text-gray-300 border border-white/10"}`}>
+              {stealth ? <EyeOff size={11} /> : <Eye size={11} />}
+              {stealth ? "مخفي" : "ظاهر"}
+            </motion.button>
+            <div className="flex items-center gap-1.5">
+              <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full" />
+              </motion.div>
+              <span className="text-green-400 text-[11px] font-bold">
+                {riders.filter(r => r.status === "online").length} سائق
+              </span>
+            </div>
+          </div>
+
+          {/* وسط — السرعة */}
+          <div className="flex flex-col items-center">
+            <span className="text-white font-black text-xl leading-none">{speed}</span>
+            <span className="text-gray-400 text-[9px] font-medium tracking-wider">كم/س</span>
+          </div>
+
+          {/* يمين — الاسم + حالة GPS */}
+          <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
+              gpsStatus === "active" ? "bg-orange-500/30 text-orange-300 border-orange-400/30" :
+              gpsStatus === "searching" ? "bg-yellow-500/20 text-yellow-300 border-yellow-400/20" :
+              "bg-white/10 text-gray-400 border-white/10"
+            }`}>
+              {gpsStatus === "searching"
+                ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={10} /></motion.div>
+                : <Navigation size={10} style={{ fill: gpsStatus === "active" ? "rgba(249,115,22,0.3)" : "none" }} />}
+              <span>{gpsStatus === "active" ? "نشط" : gpsStatus === "searching" ? "..." : "GPS"}</span>
+            </div>
+            <span className="text-white text-[11px] font-bold max-w-[60px] truncate text-right">
+              {profile?.full_name?.split(" ")[0] || "أنت"}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Online + stealth */}
-      <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-2">
-        <div className="bg-gray-950/95 backdrop-blur border border-green-500/40 rounded-2xl px-3 py-2 flex items-center gap-2">
-          <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.2, repeat: Infinity }}>
-            <div className="w-2 h-2 bg-green-500 rounded-full" />
-          </motion.div>
-          <span className="text-green-400 text-xs font-bold">{riders.filter(r => r.status === "online").length} سائق</span>
-        </div>
-        <motion.button whileTap={{ scale: 0.9 }} onClick={() => setStealth(!stealth)}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold border ${stealth ? "bg-purple-500/30 border-purple-500/60 text-purple-300" : "bg-gray-950/95 border-gray-700 text-gray-300"}`}>
-          {stealth ? <EyeOff size={13} /> : <Eye size={13} />}{stealth ? "مخفي" : "الخفاء"}
-        </motion.button>
-      </div>
+      {/* ══════════════════════════════════════
+          RIGHT CONTROLS — صغيرة وشفافة
+      ══════════════════════════════════════ */}
+      <div className="absolute right-3 z-[1000] flex flex-col gap-2"
+        style={{ top: "50%", transform: "translateY(-50%)" }}>
 
-      {/* Right controls */}
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 z-[1000] flex flex-col gap-2">
-
-        {/* زر موقعي — Apple Maps style */}
+        {/* موقعي */}
         <motion.button whileTap={{ scale: 0.88 }}
-          onClick={() => { if (loc) setRecenterTrigger(t => t + 1); }}
-          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${loc ? "bg-gray-900/95 border-gray-700 active:bg-orange-500" : "bg-gray-900/50 border-gray-800 opacity-50"}`}>
-          <Navigation size={18} className={tracking ? "text-orange-400" : "text-gray-400"} style={{ fill: tracking ? "rgba(249,115,22,0.2)" : "none" }} />
+          onClick={() => loc && setRecenterTrigger(t => t + 1)}
+          className="w-9 h-9 rounded-full flex items-center justify-center bg-black/40 backdrop-blur-xl border border-white/15 shadow-lg active:bg-orange-500/50 transition-all">
+          <Navigation size={15} className={tracking ? "text-orange-400" : "text-white/70"} />
         </motion.button>
 
         {/* GPS toggle */}
         <motion.button whileTap={{ scale: 0.9 }} onClick={toggleGPS}
-          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${tracking ? "bg-orange-500 border-orange-400 shadow-orange-500/40" : "bg-gray-900/95 border-gray-700"}`}>
+          className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border shadow-lg transition-all ${
+            tracking ? "bg-orange-500/80 border-orange-400/60 shadow-orange-500/30" : "bg-black/40 border-white/15"
+          }`}>
           {gpsStatus === "searching"
-            ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={17} className="text-orange-400" /></motion.div>
-            : <span className="text-sm font-black">{tracking ? "📡" : "📡"}</span>}
+            ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={13} className="text-orange-400" /></motion.div>
+            : <Navigation size={13} className={tracking ? "text-white" : "text-white/60"} style={{ fill: tracking ? "rgba(255,255,255,0.3)" : "none" }} />}
         </motion.button>
 
-        {/* Map Style picker */}
+        {/* Map Style */}
         <div className="relative">
           <motion.button whileTap={{ scale: 0.9 }}
             onClick={() => setShowStylePicker(!showStylePicker)}
-            className="w-11 h-11 bg-gray-900/95 border border-gray-700 rounded-2xl flex items-center justify-center shadow-lg text-lg">
+            className="w-9 h-9 rounded-full flex items-center justify-center bg-black/40 backdrop-blur-xl border border-white/15 shadow-lg text-base">
             {currentStyle.icon}
           </motion.button>
           <AnimatePresence>
             {showStylePicker && (
-              <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
-                className="absolute right-14 top-0 flex gap-2">
-                {Object.entries(MAP_STYLES).map(([key, style]) => (
-                  <motion.button key={key} whileTap={{ scale: 0.9 }}
-                    onClick={() => { setMapStyle(key); setShowStylePicker(false); }}
-                    className={`flex flex-col items-center gap-1 px-3 py-2 rounded-2xl border shadow-lg transition-all whitespace-nowrap ${mapStyle === key ? "bg-orange-500 border-orange-400 text-white" : "bg-gray-900/95 border-gray-700 text-gray-300"}`}>
-                    <span className="text-xl">{style.icon}</span>
-                    <span className="text-[10px] font-bold">{style.label}</span>
-                  </motion.button>
-                ))}
-              </motion.div>
+              <>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-10" onClick={() => setShowStylePicker(false)} />
+                <motion.div initial={{ opacity: 0, scale: 0.85, x: 8 }} animate={{ opacity: 1, scale: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.85, x: 8 }}
+                  className="absolute right-11 top-0 z-20 flex flex-col gap-1.5 bg-black/60 backdrop-blur-xl border border-white/15 rounded-2xl p-2 shadow-2xl">
+                  {Object.entries(MAP_STYLES).map(([key, style]) => (
+                    <motion.button key={key} whileTap={{ scale: 0.93 }}
+                      onClick={() => { setMapStyle(key); setShowStylePicker(false); }}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                        mapStyle === key ? "bg-orange-500/80 text-white" : "text-gray-300 hover:bg-white/10"
+                      }`}>
+                      <span>{style.icon}</span><span>{style.label}</span>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              </>
             )}
           </AnimatePresence>
         </div>
 
-        {/* زر إضافة تحذير */}
+        {/* تحذير */}
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowAddAlert(!showAddAlert)}
-          className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-lg transition-all ${showAddAlert ? "bg-red-500 border-red-400" : "bg-gray-900/95 border-gray-700"}`}>
-          <span className="text-lg">{showAddAlert ? "✕" : "⚠️"}</span>
+          className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border shadow-lg transition-all text-base ${
+            showAddAlert ? "bg-red-500/70 border-red-400/50" : "bg-black/40 border-white/15"
+          }`}>
+          {showAddAlert ? <X size={14} className="text-white" /> : <span>⚠️</span>}
         </motion.button>
 
-        {/* عدد التحذيرات */}
+        {/* عداد التحذيرات */}
         {alerts.length > 0 && (
-          <div className="w-11 h-11 bg-red-500/20 border border-red-500/40 rounded-2xl flex flex-col items-center justify-center">
-            <span className="text-red-400 font-black text-sm">{alerts.length}</span>
-            <span className="text-red-500 text-[9px]">تحذير</span>
+          <div className="w-9 h-9 bg-red-500/30 backdrop-blur-xl border border-red-400/30 rounded-full flex flex-col items-center justify-center">
+            <span className="text-red-300 font-black text-xs leading-none">{alerts.length}</span>
           </div>
         )}
 
         {/* عداد الرادارات */}
         {cameras.length > 0 && (
-          <div className="w-11 h-11 bg-yellow-500/20 border border-yellow-500/40 rounded-2xl flex flex-col items-center justify-center">
-            <span className="text-yellow-400 font-black text-sm">{cameras.length > 999 ? `${Math.round(cameras.length/1000)}k` : cameras.length}</span>
-            <span className="text-yellow-500 text-[9px]">رادار</span>
+          <div className="w-9 h-9 bg-yellow-500/20 backdrop-blur-xl border border-yellow-400/20 rounded-full flex flex-col items-center justify-center">
+            <span className="text-[8px]">📷</span>
+            <span className="text-yellow-300 font-black text-[9px] leading-none">
+              {cameras.length > 999 ? `${Math.round(cameras.length/1000)}k` : cameras.length}
+            </span>
           </div>
         )}
       </div>
 
-      {/* نموذج إضافة تحذير */}
+      {/* ══════════════════════════════════════
+          ALERT FORM
+      ══════════════════════════════════════ */}
       <AnimatePresence>
         {showAddAlert && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="absolute bottom-24 left-3 right-3 z-[1000]">
-            <div className="bg-gray-950/98 border border-red-500/40 rounded-2xl p-4 backdrop-blur shadow-xl">
-              <p className="text-white font-bold text-sm text-right mb-3">⚠️ إضافة تحذير في موقعك</p>
-
-              {/* نوع التحذير */}
+          <motion.div initial={{ opacity: 0, y: 20, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.96 }}
+            className="absolute bottom-24 left-4 right-4 z-[1000]">
+            <div className="bg-black/70 backdrop-blur-2xl border border-white/12 rounded-3xl p-4 shadow-2xl">
+              <p className="text-white font-bold text-sm text-right mb-3">⚠️ أضف تحذيراً في موقعك</p>
               <div className="grid grid-cols-4 gap-2 mb-3">
                 {ALERT_TYPES.map(t => (
                   <motion.button key={t.id} whileTap={{ scale: 0.9 }} onClick={() => setAlertType(t.id)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-xs transition-all ${alertType === t.id ? "bg-red-500/30 border-red-500/60 text-red-300" : "bg-gray-800 border-gray-700 text-gray-400"}`}>
+                    className={`flex flex-col items-center gap-1 p-2 rounded-2xl border text-xs transition-all ${
+                      alertType === t.id ? "bg-red-500/40 border-red-400/50 text-red-200" : "bg-white/5 border-white/10 text-gray-400"
+                    }`}>
                     <span className="text-lg">{t.icon}</span>
                     <span className="text-[9px] text-center leading-tight">{t.label}</span>
                   </motion.button>
                 ))}
               </div>
-
-              {/* وصف اختياري */}
               <input value={alertDesc} onChange={e => setAlertDesc(e.target.value)}
-                placeholder="وصف إضافي (اختياري)..." dir="rtl"
-                className="w-full bg-gray-900 border border-gray-700 text-white placeholder-gray-600 rounded-xl px-3 py-2 text-sm mb-3 focus:border-red-500 focus:outline-none" />
-
+                placeholder="وصف إضافي..." dir="rtl"
+                className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-2xl px-3 py-2 text-sm mb-3 focus:border-red-400/50 focus:outline-none" />
               <div className="flex gap-2">
                 <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowAddAlert(false)}
-                  className="flex-1 bg-gray-800 text-gray-400 font-bold py-2.5 rounded-xl text-sm">
+                  className="flex-1 bg-white/8 text-gray-300 font-bold py-2.5 rounded-2xl text-sm border border-white/10">
                   إلغاء
                 </motion.button>
                 <motion.button whileTap={{ scale: 0.95 }} onClick={handleAddAlert} disabled={!loc || addingAlert}
-                  className="flex-1 bg-red-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-1">
-                  {addingAlert ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div> : "📍 نشر التحذير"}
+                  className="flex-1 bg-red-500/80 text-white font-bold py-2.5 rounded-2xl text-sm disabled:opacity-40 flex items-center justify-center gap-1">
+                  {addingAlert ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} /></motion.div> : "📍 نشر"}
                 </motion.button>
               </div>
-
-              {!loc && <p className="text-red-400 text-xs text-center mt-2">فعّل GPS أولاً لتحديد موقعك</p>}
+              {!loc && <p className="text-red-400 text-xs text-center mt-2">فعّل GPS أولاً</p>}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Selected rider */}
-      {/* SOS */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1">
-        <motion.button whileTap={{ scale: 0.88 }} onClick={() => { setSos(true); setTimeout(() => setSos(false), 5000); }}
-          animate={sos ? { scale: [1, 1.12, 1] } : {}} transition={{ duration: 0.5, repeat: sos ? Infinity : 0 }}
-          className={`w-16 h-16 rounded-full font-black text-white text-sm flex items-center justify-center ${sos ? "bg-red-600" : "bg-red-500"}`}
-          style={{ boxShadow: "0 0 28px #ef444466, 0 4px 20px rgba(0,0,0,0.5)" }}>
-          {sos ? "📡" : "SOS"}
+      {/* ══════════════════════════════════════
+          SOS — زاوية أسفل يسار، صغير وأنيق
+      ══════════════════════════════════════ */}
+      <div className="absolute z-[1000]" style={{ bottom: "80px", left: "16px" }}>
+        <motion.button whileTap={{ scale: 0.88 }}
+          onClick={() => { setSos(true); setTimeout(() => setSos(false), 5000); }}
+          animate={sos ? { scale: [1, 1.1, 1] } : {}}
+          transition={{ duration: 0.6, repeat: sos ? Infinity : 0 }}
+          className={`w-12 h-12 rounded-full font-black text-white text-xs flex flex-col items-center justify-center gap-0 transition-all ${
+            sos ? "bg-red-600" : "bg-red-500/80 backdrop-blur-xl border border-red-400/40"
+          }`}
+          style={{ boxShadow: sos ? "0 0 24px #ef4444aa" : "0 0 12px rgba(239,68,68,0.3)" }}>
+          <span className="text-[10px] font-black tracking-wider">{sos ? "📡" : "SOS"}</span>
         </motion.button>
-        {sos && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-xs font-bold">جاري الإرسال...</motion.p>}
+        {sos && (
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+            className="absolute -top-7 left-1/2 -translate-x-1/2 bg-red-500/80 backdrop-blur rounded-full px-2 py-0.5 whitespace-nowrap">
+            <span className="text-white text-[9px] font-bold">جاري الإرسال...</span>
+          </motion.div>
+        )}
       </div>
 
       <MapContainer center={center} zoom={15} className="h-full w-full" style={{ background: currentStyle.bg }} zoomControl={false}>
