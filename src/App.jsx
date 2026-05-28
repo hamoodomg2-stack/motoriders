@@ -852,12 +852,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
-        <div className="flex items-center gap-1.5">
-          {connected
-            ? <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, repeat: Infinity }}><Wifi size={13} className="text-green-500" /></motion.div>
-            : <WifiOff size={13} className="text-gray-600" />}
-          <span className="text-xs text-gray-500">{connected ? "مباشر" : "غير متصل"}</span>
-        </div>
+        <div className="w-8" />
         <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
           className="relative">
@@ -1253,21 +1248,14 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         <div className="flex items-center justify-between bg-slate-900/40 backdrop-blur-md rounded-2xl px-4 py-2 border border-white/10"
           style={{ boxShadow: "0 2px 16px rgba(0,0,0,0.2)" }}>
 
-          {/* يسار — السائقون + وضع الخفاء */}
-          <div className="flex items-center gap-2">
-            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setStealth(!stealth)}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${stealth ? "bg-purple-500/30 text-purple-200 border border-purple-400/30" : "bg-white/8 text-gray-400 border border-white/8"}`}>
-              {stealth ? <EyeOff size={9} /> : <Eye size={9} />}
-              {stealth ? "مخفي" : "ظاهر"}
-            </motion.button>
-            <div className="flex items-center gap-1">
-              <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                <div className="w-1 h-1 bg-green-400 rounded-full" />
-              </motion.div>
-              <span className="text-green-400 text-[10px] font-semibold">
-                {riders.filter(r => r.status === "online").length}
-              </span>
-            </div>
+          {/* يسار — عدد السائقين */}
+          <div className="flex items-center gap-1">
+            <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
+              <div className="w-1 h-1 bg-green-400 rounded-full" />
+            </motion.div>
+            <span className="text-green-400 text-[10px] font-semibold">
+              {riders.filter(r => r.status === "online").length} سائق
+            </span>
           </div>
 
           {/* وسط — السرعة */}
