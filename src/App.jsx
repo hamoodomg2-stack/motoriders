@@ -852,26 +852,23 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
-        <div className="w-8" />
-        <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 bg-green-500/15 border border-green-500/20 rounded-full px-2 py-0.5">
+        <div className="flex items-center gap-1 bg-green-500/15 border border-green-500/20 rounded-full px-2 py-0.5">
             <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
               <div className="w-1.5 h-1.5 bg-green-400 rounded-full" />
             </motion.div>
             <span className="text-green-400 text-xs font-bold">{riders.filter(r => r.status === "online").length}</span>
           </div>
-          <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
-            className="relative">
-            <Bell size={20} className="text-gray-400" />
-            {unreadNotif > 0 && (
-              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
-                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
-                <span className="text-white text-[9px] font-black">{unreadNotif > 9 ? "9+" : unreadNotif}</span>
-              </motion.div>
-            )}
-          </motion.button>
-        </div>
+        <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
+        <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
+          className="relative">
+          <Bell size={20} className="text-gray-400" />
+          {unreadNotif > 0 && (
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-[9px] font-black">{unreadNotif > 9 ? "9+" : unreadNotif}</span>
+            </motion.div>
+          )}
+        </motion.button>
       </div>
 
       {/* GPS Error */}
