@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -10,7 +10,7 @@ import {
   BellOff, BellRing, Camera, Heart, Image, X, Upload
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 
 /* ─── SUPABASE — ضع بياناتك هنا ─── */
@@ -219,7 +219,7 @@ const createRiderIcon = (name, speed, isOnline, avatarUrl, pingEmoji) => {
           <div style="width:100%;height:100%;border-radius:50%;background:#111;
             display:flex;align-items:center;justify-content:center;overflow:hidden;">
             ${avatarUrl
-        ? `<img src="${avatarUrl}" crossorigin="anonymous" loading="eager" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
+        ? `<img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
         : `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24"
                   fill="none" stroke="${glowColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -331,20 +331,26 @@ function useGPS(profileId, stealth) {
   const [speed, setSpeed] = useState(0);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
+  const [trail, setTrail] = useState([]); // مسار الجلسة الحالية
   const watchRef = useRef(null);
   const intervalRef = useRef(null);
   const lastRef = useRef(null);
-  const locRef = useRef(null); // نسخة ref من loc لتجنب re-renders
+  const locRef = useRef(null);
 
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
     await supabase.from("locations").upsert(
-      { profile_id: profileId, lat, lng, speed: Math.round(spd * 3.6), updated_at: new Date().toISOString() },
+      {
+        profile_id: profileId,
+        lat, lng,
+        speed: Math.round(spd * 3.6),
+        updated_at: new Date().toISOString()
+      },
       { onConflict: "profile_id" }
     );
   }, [profileId, stealth]);
 
-  const distanceRef = useRef(0);
+  const distanceRef = useRef(0); // متر مقطوعة في الجلسة
   const sessionTopSpeedRef = useRef(0);
 
   const start = useCallback(() => {
@@ -352,27 +358,21 @@ function useGPS(profileId, stealth) {
     setStatus("searching");
     distanceRef.current = 0;
     sessionTopSpeedRef.current = 0;
-
+    setTrail([]); // صفّر المسار عند البدء
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        const { latitude: lat, longitude: lng, speed: spd, accuracy } = pos.coords;
+        const { latitude: lat, longitude: lng, speed: spd } = pos.coords;
         const kmh = spd ? Math.round(spd * 3.6) : 0;
-
-        // تجنب الرمش — فقط حدّث الـ state إذا تغير الموقع بشكل ملحوظ
-        const prev = locRef.current;
-        const moved = !prev || getDistance(prev.lat, prev.lng, lat, lng) > 5;
-
-        if (moved) {
-          locRef.current = { lat, lng };
-          setLoc({ lat, lng });
-          try { localStorage.setItem("moto_last_loc", JSON.stringify({ lat, lng })); } catch {}
+        setLoc({ lat, lng }); setSpeed(kmh); setStatus("active"); setError(null);
+        // احفظ آخر موقع
+        try { localStorage.setItem("moto_last_loc", JSON.stringify({ lat, lng })); } catch {}
+        // أضف نقطة للمسار (كل 10م على الأقل)
+        if (!lastRef.current || getDistance(lastRef.current.lat, lastRef.current.lng, lat, lng) > 10) {
+          setTrail(prev => {
+            const next = [...prev, [lat, lng]];
+            return next.length > 2000 ? next.slice(-2000) : next; // حد أقصى 2000 نقطة
+          });
         }
-
-        // السرعة دائماً تتحدث
-        setSpeed(kmh);
-        setStatus("active");
-        setError(null);
-
         // حساب المسافة
         if (lastRef.current) {
           const d = getDistance(lastRef.current.lat, lastRef.current.lng, lat, lng);
@@ -385,13 +385,11 @@ function useGPS(profileId, stealth) {
         setStatus("error");
         setError(err.code === 1 ? "يرجى السماح بالوصول للموقع من إعدادات المتصفح" : "تعذّر تحديد موقعك");
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
     );
-
-    // رفع الموقع كل 5 ثواني
     intervalRef.current = setInterval(() => {
       if (lastRef.current) upload(lastRef.current.lat, lastRef.current.lng, lastRef.current.speed / 3.6);
-    }, 5000);
+    }, 10000);
   }, [upload]);
 
   const stop = useCallback(async () => {
@@ -444,7 +442,7 @@ function useGPS(profileId, stealth) {
     };
   }, [profileId]);
 
-  return { loc, speed, status, error, start, stop };
+  return { loc, speed, status, error, start, stop, trail };
 }
 
 /* ════════════════════════════════════════
@@ -755,7 +753,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       tag: "ping",
     });
   }; // { id, full_name, bike_type, avatar_url }
-  const { loc, speed, status: gpsStatus, error: gpsError, start, stop } = useGPS(profile?.id, stealth);
+  const { loc, speed, status: gpsStatus, error: gpsError, start, stop, trail } = useGPS(profile?.id, stealth);
 
   // جلب الإشعارات عند التحميل
   useEffect(() => {
@@ -819,9 +817,9 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     const ch = supabase.channel("rt-locations")
       .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, async ({ eventType, new: n, old: o }) => {
         if (eventType === "DELETE") {
-          // دراج أوقف GPS — أزله من الخريطة
-          setRiders(prev => prev.map(r => r.id === (o?.profile_id)
-            ? { ...r, lat: null, lng: null, status: "offline" } : r));
+          setRiders(prev => prev.map(r =>
+            r.id === (o?.profile_id) ? { ...r, lat: null, lng: null, status: "offline", trail: [] } : r
+          ));
           return;
         }
         if (!n?.profile_id || n.profile_id === profile.id) return;
@@ -829,17 +827,24 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
         setRiders(prev => {
           const exists = prev.find(r => r.id === n.profile_id);
           if (exists) {
-            // حدّث الموجود
-            return prev.map(r => r.id === n.profile_id
-              ? { ...r, lat: n.lat, lng: n.lng, current_speed: n.speed, status: "online", location_updated_at: n.updated_at }
-              : r);
+            // حدّث + أضف نقطة للمسار
+            return prev.map(r => {
+              if (r.id !== n.profile_id) return r;
+              const prevTrail = r.trail || [];
+              const lastPt = prevTrail[prevTrail.length - 1];
+              const shouldAdd = !lastPt || getDistance(lastPt[0], lastPt[1], n.lat, n.lng) > 10;
+              const newTrail = shouldAdd
+                ? [...prevTrail, [n.lat, n.lng]].slice(-2000)
+                : prevTrail;
+              return { ...r, lat: n.lat, lng: n.lng, current_speed: n.speed, status: "online", trail: newTrail };
+            });
           } else {
-            // دراج جديد — جيب بياناته
+            // دراج جديد
             supabase.from("profiles").select("*").eq("id", n.profile_id).single()
               .then(({ data: p }) => {
                 if (p) setRiders(prev2 => [...prev2, {
                   ...p, lat: n.lat, lng: n.lng, current_speed: n.speed,
-                  status: "online", location_updated_at: n.updated_at
+                  status: "online", trail: [[n.lat, n.lng]]
                 }]);
               });
             return prev;
@@ -977,7 +982,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
-          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onRiderProfile={(id) => setMapSelectedRider(id)} />}
+          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} trail={trail} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onRiderProfile={(id) => setMapSelectedRider(id)} />}
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onPing={sendPing} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} openDMWith={openDMWith} onDMOpened={() => setOpenDMWith(null)} />}
           {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onPing={sendPing} />}
@@ -1056,7 +1061,7 @@ function ZoomListener({ onZoom }) {
   return null;
 }
 
-function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], onRiderDM, onRiderProfile }) {
+function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], trail = [], onRiderDM, onRiderProfile }) {
   // آخر موقع محفوظ
   const getLastLoc = () => {
     try {
@@ -1081,19 +1086,6 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     light:     { label: "نهاري",       icon: "☀️", url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: "abcd", bg: "#e8e8e8" },
     satellite: { label: "قمر صناعي",  icon: "🛰️", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", subdomains: "", bg: "#111" },
   };
-
-  // cache الأيقونات — لا تُعاد إلا لما يتغير الـ avatar أو الـ ping
-  const iconCache = useRef({});
-  const getCachedIcon = useCallback((id, name, spd, isOnline, avatarUrl, pingEmoji) => {
-    const key = `${id}-${pingEmoji || ""}-${avatarUrl || ""}`;
-    if (!iconCache.current[key] || iconCache.current[key].speed !== spd) {
-      iconCache.current[key] = {
-        icon: createRiderIcon(name, spd, isOnline, avatarUrl, pingEmoji),
-        speed: spd,
-      };
-    }
-    return iconCache.current[key].icon;
-  }, []);
   const currentStyle = MAP_STYLES[mapStyle];
   const [recenterTrigger, setRecenterTrigger] = useState(0);
   const [cameras, setCameras] = useState([]);
@@ -1464,20 +1456,51 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           maxZoom={19}
         />
 
+        {/* مساري الشخصي — خط برتقالي */}
+        {trail.length > 1 && !stealth && (
+          <Polyline
+            positions={trail}
+            pathOptions={{
+              color: "#f97316",
+              weight: 4,
+              opacity: 0.85,
+              lineCap: "round",
+              lineJoin: "round",
+            }} />
+        )}
+
+        {/* مسارات الدراجين الآخرين — ألوان مختلفة */}
+        {riders.filter(r => r.trail && r.trail.length > 1).map((r, i) => {
+          const colors = ["#3b82f6", "#22c55e", "#a855f7", "#ec4899", "#14b8a6"];
+          return (
+            <Polyline
+              key={`trail-${r.id}`}
+              positions={r.trail}
+              pathOptions={{
+                color: colors[i % colors.length],
+                weight: 3,
+                opacity: 0.6,
+                lineCap: "round",
+                lineJoin: "round",
+                dashArray: "6, 4",
+              }} />
+          );
+        })}
+
         {/* موقعي */}
         {loc && !stealth && (
           <Marker
-            key="me"
+            key={`me-${activePings["me"]?.ts || 0}`}
             position={[loc.lat, loc.lng]}
-            icon={getCachedIcon("me", profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
+            icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
         )}
 
         {/* بقية الدراجين */}
-        {riders.filter(r => r.lat && r.lng && r.status === "online").map(r => (
+        {riders.filter(r => r.lat && r.lng).map(r => (
           <Marker
-            key={r.id}
+            key={`${r.id}-${activePings[r.id]?.ts || 0}`}
             position={[r.lat, r.lng]}
-            icon={getCachedIcon(r.id, r.full_name, r.current_speed || 0, true, r.avatar_url, activePings[r.id]?.emoji)}
+            icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url, activePings[r.id]?.emoji)}
             eventHandlers={{ click: () => onRiderProfile?.(r.id) }} />
         ))}
 
