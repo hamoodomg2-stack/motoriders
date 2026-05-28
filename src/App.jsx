@@ -1061,6 +1061,16 @@ function ZoomListener({ onZoom }) {
   return null;
 }
 
+function FlyToLocation({ target }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target) {
+      map.flyTo([target.lat, target.lng], 16, { duration: 1.5, easeLinearity: 0.2 });
+    }
+  }, [target]);
+  return null;
+}
+
 function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], trail = [], onRiderDM, onRiderProfile }) {
   // آخر موقع محفوظ
   const getLastLoc = () => {
@@ -1074,12 +1084,47 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   const center = loc ? [loc.lat, loc.lng] : lastLoc ? [lastLoc.lat, lastLoc.lng] : [24.688, 46.722];
   const [sos, setSos] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [activePings, setActivePings] = useState({}); // { riderId: { emoji, id } }
-  const [myPingMenu, setMyPingMenu] = useState(null); // riderId
+  const [activePings, setActivePings] = useState({});
+  const [myPingMenu, setMyPingMenu] = useState(null);
   const [mapStyle, setMapStyle] = useState("dark");
   const [showStylePicker, setShowStylePicker] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [destination, setDestination] = useState(null); // { lat, lng, name }
+  const [flyTarget, setFlyTarget] = useState(null);
+  const searchRef = useRef(null);
   const mapRef = useRef(null);
   const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
+
+  // البحث عن مكان باستخدام Nominatim
+  const searchPlace = async (q) => {
+    if (!q.trim()) { setSearchResults([]); return; }
+    setSearchLoading(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`,
+        { headers: { "Accept-Language": "ar,en" } }
+      );
+      const data = await res.json();
+      setSearchResults(data.map(r => ({
+        id: r.place_id,
+        name: r.display_name.split(",").slice(0, 2).join("،"),
+        fullName: r.display_name,
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+        type: r.type,
+      })));
+    } catch { setSearchResults([]); }
+    setSearchLoading(false);
+  };
+
+  // debounce البحث
+  useEffect(() => {
+    const t = setTimeout(() => searchPlace(searchQuery), 500);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   const MAP_STYLES = {
     dark:      { label: "ليلي",        icon: "🌑", url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", subdomains: "abcd", bg: "#0a0a0a" },
@@ -1287,6 +1332,96 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
+
+      {/* ══ Search Bar ══ */}
+      <div className="absolute top-14 left-3 right-16 z-[1000]">
+        <AnimatePresence>
+          {showSearch ? (
+            <motion.div initial={{ opacity: 0, y: -8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.97 }}
+              className="bg-black/70 backdrop-blur-xl border border-white/15 rounded-2xl overflow-hidden shadow-2xl">
+              {/* Input */}
+              <div className="flex items-center gap-2 px-3 py-2.5">
+                <motion.button whileTap={{ scale: 0.9 }} onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }}>
+                  <X size={16} className="text-gray-400" />
+                </motion.button>
+                <input
+                  ref={searchRef}
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="ابحث عن موقع..." dir="rtl"
+                  className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm focus:outline-none text-right" />
+                {searchLoading
+                  ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} className="text-orange-400" /></motion.div>
+                  : <Search size={14} className="text-gray-500" />}
+              </div>
+
+              {/* النتائج */}
+              {searchResults.length > 0 && (
+                <div className="border-t border-white/8 max-h-56 overflow-y-auto">
+                  {searchResults.map((r, i) => (
+                    <motion.button key={r.id} whileTap={{ backgroundColor: "rgba(249,115,22,0.15)" }}
+                      onClick={() => {
+                        setDestination(r);
+                        setFlyTarget({ lat: r.lat, lng: r.lng });
+                        setShowSearch(false);
+                        setSearchQuery("");
+                        setSearchResults([]);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-right transition-all ${i < searchResults.length - 1 ? "border-b border-white/6" : ""}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-semibold truncate">{r.name}</p>
+                        <p className="text-gray-500 text-xs truncate">{r.fullName.split(",").slice(2, 4).join("،")}</p>
+                      </div>
+                      <div className="text-base shrink-0">
+                        {r.type === "restaurant" ? "🍽️" : r.type === "fuel" ? "⛽" : r.type === "hospital" ? "🏥" : "📍"}
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+
+              {searchQuery && !searchLoading && searchResults.length === 0 && (
+                <div className="px-4 py-3 text-gray-500 text-xs text-center border-t border-white/8">
+                  لا توجد نتائج لـ "{searchQuery}"
+                </div>
+              )}
+            </motion.div>
+          ) : (
+            <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => { setShowSearch(true); setTimeout(() => searchRef.current?.focus(), 100); }}
+              className="flex items-center gap-2 bg-black/50 backdrop-blur-xl border border-white/15 rounded-2xl px-4 py-2.5 shadow-lg w-full">
+              <span className="text-gray-400 text-sm flex-1 text-right">ابحث عن موقع...</span>
+              <Search size={15} className="text-gray-500 shrink-0" />
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        {/* وجهة محددة — بطاقة أسفل البحث */}
+        {destination && !showSearch && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+            className="mt-2 bg-black/60 backdrop-blur-xl border border-blue-500/30 rounded-2xl px-4 py-2.5 flex items-center gap-3">
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setDestination(null)}
+              className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0">
+              <X size={12} className="text-gray-300" />
+            </motion.button>
+            <div className="flex-1 text-right min-w-0">
+              <p className="text-blue-300 text-xs font-semibold truncate">📍 {destination.name}</p>
+              {loc && (
+                <p className="text-gray-500 text-[10px]">
+                  {(getDistance(loc.lat, loc.lng, destination.lat, destination.lng) / 1000).toFixed(1)} كم
+                </p>
+              )}
+            </div>
+            <motion.button whileTap={{ scale: 0.9 }}
+              onClick={() => setFlyTarget({ lat: destination.lat, lng: destination.lng })}
+              className="bg-blue-500/80 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shrink-0">
+              اذهب
+            </motion.button>
+          </motion.div>
+        )}
+      </div>
 
       {/* السرعة — مربع صغير شفاف يمين */}
       <div className="absolute top-14 right-3 z-[1000]">
@@ -1529,6 +1664,45 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         {loc && <MapCentre loc={loc} />}
         <RecenterMap loc={loc} trigger={recenterTrigger} />
         <ZoomListener onZoom={setMapZoom} />
+        <FlyToLocation target={flyTarget} />
+
+        {/* وجهة البحث */}
+        {destination && (
+          <Marker
+            position={[destination.lat, destination.lng]}
+            icon={L.divIcon({
+              html: `<div style="
+                display:flex;flex-direction:column;align-items:center;gap:3px;
+              ">
+                <div style="
+                  background:rgba(59,130,246,0.95);
+                  border:3px solid #fff;
+                  border-radius:50%;
+                  width:36px;height:36px;
+                  display:flex;align-items:center;justify-content:center;
+                  font-size:18px;
+                  box-shadow:0 0 20px rgba(59,130,246,0.7);
+                ">📍</div>
+                <div style="
+                  background:rgba(0,0,0,0.85);
+                  border:1px solid rgba(59,130,246,0.6);
+                  border-radius:8px;
+                  padding:2px 8px;
+                  color:#93c5fd;
+                  font-size:10px;
+                  font-weight:700;
+                  white-space:nowrap;
+                  max-width:140px;
+                  overflow:hidden;
+                  text-overflow:ellipsis;
+                ">${destination.name}</div>
+              </div>`,
+              iconSize: [36, 70],
+              iconAnchor: [18, 70],
+              className: "",
+            })}
+          />
+        )}
 
         {/* الرادارات — تظهر عند zoom ≥ 14 فقط وفي نطاق الشاشة */}
         {mapZoom >= 14 && cameras
