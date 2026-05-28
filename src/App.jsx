@@ -859,14 +859,6 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
           <span className="text-xs text-gray-500">{connected ? "مباشر" : "غير متصل"}</span>
         </div>
         <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
-        <div className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold ${gpsStatus === "active" ? "bg-green-500/20 text-green-400" :
-          gpsStatus === "searching" ? "bg-yellow-500/20 text-yellow-400" :
-            gpsStatus === "error" ? "bg-red-500/20 text-red-400" : "bg-gray-800 text-gray-500"}`}>
-          {gpsStatus === "searching" && <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}><Loader size={10} /></motion.div>}
-          {gpsStatus === "active" && <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}><div className="w-1.5 h-1.5 bg-green-400 rounded-full" /></motion.div>}
-          <Navigation size={11} />
-          <span>{gpsStatus === "active" ? `${speed}` : gpsStatus === "searching" ? "..." : gpsStatus === "error" ? "!" : "GPS"}</span>
-        </div>
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
           className="relative">
           <Bell size={20} className="text-gray-400" />
