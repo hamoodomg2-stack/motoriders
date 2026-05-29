@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -336,6 +336,7 @@ function useGPS(profileId, stealth) {
   const intervalRef = useRef(null);
   const lastRef = useRef(null);
   const locRef = useRef(null);
+  const locRef = useRef(null);
 
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
@@ -363,14 +364,24 @@ function useGPS(profileId, stealth) {
       (pos) => {
         const { latitude: lat, longitude: lng, speed: spd } = pos.coords;
         const kmh = spd ? Math.round(spd * 3.6) : 0;
-        setLoc({ lat, lng }); setSpeed(kmh); setStatus("active"); setError(null);
-        // احفظ آخر موقع
-        try { localStorage.setItem("moto_last_loc", JSON.stringify({ lat, lng })); } catch {}
+
+        // تحديث السرعة دائماً
+        setSpeed(kmh); setStatus("active"); setError(null);
+
+        // تحديث الموقع فقط إذا تحرك أكثر من 5م — يمنع الرمش
+        const movedEnough = !locRef.current ||
+          getDistance(locRef.current.lat, locRef.current.lng, lat, lng) > 5;
+        if (movedEnough) {
+          locRef.current = { lat, lng };
+          setLoc({ lat, lng });
+          try { localStorage.setItem("moto_last_loc", JSON.stringify({ lat, lng })); } catch {}
+        }
+
         // أضف نقطة للمسار (كل 10م على الأقل)
         if (!lastRef.current || getDistance(lastRef.current.lat, lastRef.current.lng, lat, lng) > 10) {
           setTrail(prev => {
             const next = [...prev, [lat, lng]];
-            return next.length > 2000 ? next.slice(-2000) : next; // حد أقصى 2000 نقطة
+            return next.length > 2000 ? next.slice(-2000) : next;
           });
         }
         // حساب المسافة
@@ -385,11 +396,11 @@ function useGPS(profileId, stealth) {
         setStatus("error");
         setError(err.code === 1 ? "يرجى السماح بالوصول للموقع من إعدادات المتصفح" : "تعذّر تحديد موقعك");
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
     intervalRef.current = setInterval(() => {
       if (lastRef.current) upload(lastRef.current.lat, lastRef.current.lng, lastRef.current.speed / 3.6);
-    }, 10000);
+    }, 5000);
   }, [upload]);
 
   const stop = useCallback(async () => {
@@ -1220,6 +1231,21 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     light:     { label: "نهاري",       icon: "☀️", url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: "abcd", bg: "#e8e8e8" },
     satellite: { label: "قمر صناعي",  icon: "🛰️", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", subdomains: "", bg: "#111" },
   };
+
+  // cache الأيقونات — لا تُعاد إلا لما يتغير الـ ping أو الأفاتار
+  const iconCacheRef = useRef({});
+  const getCachedIcon = useCallback((id, name, spd, isOnline, avatarUrl, pingEmoji) => {
+    const key = `${id}|${pingEmoji || ""}|${avatarUrl || ""}`;
+    const cached = iconCacheRef.current[key];
+    // أعد الإنشاء فقط لو تغيرت السرعة بفرق 5+ كم/س
+    if (!cached || Math.abs((cached.spd || 0) - spd) >= 5) {
+      iconCacheRef.current[key] = {
+        icon: createRiderIcon(name, spd, isOnline, avatarUrl, pingEmoji),
+        spd,
+      };
+    }
+    return iconCacheRef.current[key].icon;
+  }, []);
   const currentStyle = MAP_STYLES[mapStyle];
   const [recenterTrigger, setRecenterTrigger] = useState(0);
   const [cameras, setCameras] = useState([]);
@@ -1422,120 +1448,196 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
 
-      {/* ══ Search Panel ══ */}
-      <div className="absolute top-14 left-3 right-16 z-[1000]">
-        <AnimatePresence>
-          {showSearch && (
-            <motion.div initial={{ opacity: 0, y: -8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.97 }}
-              className="bg-black/70 backdrop-blur-xl border border-white/15 rounded-2xl overflow-hidden shadow-2xl">
-              {/* Input */}
-              <div className="flex items-center gap-2 px-3 py-2.5">
-                <motion.button whileTap={{ scale: 0.9 }} onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }}>
-                  <X size={16} className="text-gray-400" />
-                </motion.button>
-                <input
-                  ref={searchRef}
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="ابحث عن موقع..." dir="rtl"
-                  className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm focus:outline-none text-right" />
-                {searchLoading
-                  ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader size={14} className="text-orange-400" /></motion.div>
-                  : <Search size={14} className="text-gray-500" />}
+      {/* ══ Apple Maps Style Search — من الأسفل ══ */}
+      <AnimatePresence>
+        {showSearch && (
+          <>
+            {/* Backdrop */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[1999]"
+              onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }} />
+
+            {/* Bottom Sheet */}
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 300 }}
+              className="absolute bottom-0 left-0 right-0 z-[2000] bg-gray-950/98 backdrop-blur-2xl rounded-t-3xl border-t border-white/10 shadow-2xl"
+              style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}>
+
+              {/* Handle */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 bg-gray-700 rounded-full" />
+              </div>
+
+              {/* Search Input */}
+              <div className="px-4 py-2">
+                <div className="flex items-center gap-3 bg-gray-800/80 border border-gray-700/50 rounded-2xl px-4 py-3">
+                  {searchLoading
+                    ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                        <Loader size={16} className="text-orange-400 shrink-0" />
+                      </motion.div>
+                    : <Search size={16} className="text-gray-400 shrink-0" />}
+                  <input
+                    ref={searchRef}
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="ابحث — شارع، حي، مدينة، رقم منزل..."
+                    dir="rtl"
+                    className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm focus:outline-none text-right" />
+                  {searchQuery && (
+                    <motion.button whileTap={{ scale: 0.9 }}
+                      onClick={() => { setSearchQuery(""); setSearchResults([]); }}>
+                      <X size={15} className="text-gray-500" />
+                    </motion.button>
+                  )}
+                </div>
               </div>
 
               {/* النتائج */}
-              {searchResults.length > 0 && (
-                <div className="border-t border-white/8 max-h-56 overflow-y-auto">
-                  {searchResults.map((r, i) => (
-                    <motion.button key={r.id} whileTap={{ backgroundColor: "rgba(249,115,22,0.15)" }}
-                      onClick={() => {
-                        setDestination(r);
-                        setFlyTarget({ lat: r.lat, lng: r.lng });
-                        setShowSearch(false);
-                        setSearchQuery("");
-                        setSearchResults([]);
-                      }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 text-right transition-all ${i < searchResults.length - 1 ? "border-b border-white/6" : ""}`}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-semibold truncate">{r.name}</p>
-                        <p className="text-gray-500 text-xs truncate">{r.fullName.split(",").slice(2, 4).join("،")}</p>
-                      </div>
-                      <div className="text-base shrink-0">
-                        {r.type === "restaurant" ? "🍽️" : r.type === "fuel" ? "⛽" : r.type === "hospital" ? "🏥" : "📍"}
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              )}
-
-              {searchQuery && !searchLoading && searchResults.length === 0 && (
-                <div className="px-4 py-3 text-gray-500 text-xs text-center border-t border-white/8">
-                  لا توجد نتائج لـ "{searchQuery}"
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* وجهة محددة — بطاقة أسفل البحث */}
-        {destination && !showSearch && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-            className="mt-2 bg-black/70 backdrop-blur-xl border border-blue-500/30 rounded-2xl overflow-hidden shadow-xl">
-
-            {/* Header الوجهة */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/8">
-              <motion.button whileTap={{ scale: 0.9 }}
-                onClick={() => { setDestination(null); setRoutePoints([]); setRouteInfo(null); }}
-                className="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center shrink-0">
-                <X size={13} className="text-gray-300" />
-              </motion.button>
-              <div className="flex-1 text-right min-w-0">
-                <p className="text-white text-sm font-bold truncate">📍 {destination.name}</p>
+              <div className="max-h-72 overflow-y-auto">
+                {searchResults.length > 0 ? (
+                  <div className="px-2 pb-2">
+                    {searchResults.map((r, i) => (
+                      <motion.button key={r.id} whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          setDestination(r);
+                          setFlyTarget({ lat: r.lat, lng: r.lng });
+                          setShowSearch(false);
+                          setSearchQuery("");
+                          setSearchResults([]);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-right active:bg-white/5 transition-all">
+                        <div className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center shrink-0 text-base">
+                          {r.type === "restaurant" ? "🍽️" : r.type === "fuel" ? "⛽" : r.type === "hospital" ? "🏥" : r.type === "road" ? "🛣️" : "📍"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-semibold truncate">{r.name}</p>
+                          <p className="text-gray-500 text-xs truncate mt-0.5">{r.fullName.split(",").slice(2, 5).join("،")}</p>
+                        </div>
+                        <ArrowRight size={14} className="text-gray-600 shrink-0 rotate-180" />
+                      </motion.button>
+                    ))}
+                  </div>
+                ) : searchQuery && !searchLoading ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-gray-600">
+                    <Search size={32} className="opacity-30" />
+                    <p className="text-sm">لا نتائج لـ "{searchQuery}"</p>
+                    <p className="text-xs text-gray-700">جرب كتابة العنوان بالكامل</p>
+                  </div>
+                ) : !searchQuery ? (
+                  <div className="px-4 pb-4">
+                    <p className="text-gray-600 text-xs text-right mb-2">مقترحات</p>
+                    {[
+                      { icon: "🏠", label: "المنزل", hint: "مثال: Musterstraße 1, Berlin" },
+                      { icon: "⛽", label: "أقرب محطة وقود", hint: "Tankstelle in der Nähe" },
+                      { icon: "🏍️", label: "مسار دراجات", hint: "Motorradstrecke" },
+                    ].map((s, i) => (
+                      <motion.button key={i} whileTap={{ scale: 0.97 }}
+                        onClick={() => { setSearchQuery(s.hint); searchRef.current?.focus(); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-right active:bg-white/5 transition-all">
+                        <div className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center shrink-0 text-base">{s.icon}</div>
+                        <div className="text-right">
+                          <p className="text-gray-300 text-sm font-medium">{s.label}</p>
+                          <p className="text-gray-600 text-xs">{s.hint}</p>
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* وجهة محددة — بطاقة من الأسفل مثل Apple Maps */}
+      <AnimatePresence>
+        {destination && !showSearch && (
+          <motion.div
+            initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 300 }}
+            className="absolute bottom-0 left-0 right-0 z-[1000] bg-gray-950/98 backdrop-blur-2xl rounded-t-3xl border-t border-white/10 shadow-2xl"
+            style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}>
+
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 bg-gray-700 rounded-full" />
             </div>
 
-            {/* معلومات المسار */}
-            <div className="px-4 py-3">
+            <div className="px-4 pb-3">
+              {/* اسم الوجهة */}
+              <div className="flex items-center gap-3 mb-4">
+                <motion.button whileTap={{ scale: 0.9 }}
+                  onClick={() => { setDestination(null); setRoutePoints([]); setRouteInfo(null); }}
+                  className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center shrink-0">
+                  <X size={16} className="text-gray-300" />
+                </motion.button>
+                <div className="flex-1 text-right">
+                  <p className="text-white font-bold text-base leading-tight">{destination.name}</p>
+                  <p className="text-gray-500 text-xs mt-0.5 truncate">{destination.fullName?.split(",").slice(1, 3).join("،")}</p>
+                </div>
+                <div className="w-10 h-10 bg-blue-500/20 border border-blue-500/40 rounded-full flex items-center justify-center shrink-0">
+                  <span className="text-xl">📍</span>
+                </div>
+              </div>
+
+              {/* معلومات المسار */}
               {routeLoading ? (
-                <div className="flex items-center justify-center gap-2 py-1">
+                <div className="flex items-center justify-center gap-2 py-3">
                   <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                    <Loader size={14} className="text-blue-400" />
+                    <Loader size={16} className="text-blue-400" />
                   </motion.div>
-                  <span className="text-gray-400 text-xs">جاري حساب المسار...</span>
+                  <span className="text-gray-400 text-sm">جاري حساب المسار...</span>
                 </div>
               ) : routeInfo ? (
-                <div className="flex items-center justify-between">
-                  <motion.button whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setFitTrigger(t => t + 1);
-                    }}
-                    className="bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5">
-                    <Navigation size={13} />
-                    عرض المسار
-                  </motion.button>
-                  <div className="flex items-center gap-3 text-right">
-                    <div>
-                      <p className="text-white font-black text-base leading-none">{routeInfo.distance}</p>
-                      <p className="text-gray-500 text-[10px]">كم</p>
+                <>
+                  {/* Stats */}
+                  <div className="flex gap-3 mb-4">
+                    <div className="flex-1 bg-gray-900 border border-gray-800 rounded-2xl p-3 text-center">
+                      <p className="text-white font-black text-xl">{routeInfo.distance}</p>
+                      <p className="text-gray-500 text-xs">كيلومتر</p>
                     </div>
-                    <div className="w-px h-8 bg-white/10" />
-                    <div>
-                      <p className="text-white font-black text-base leading-none">{routeInfo.duration}</p>
-                      <p className="text-gray-500 text-[10px]">دقيقة</p>
+                    <div className="flex-1 bg-gray-900 border border-gray-800 rounded-2xl p-3 text-center">
+                      <p className="text-white font-black text-xl">{routeInfo.duration}</p>
+                      <p className="text-gray-500 text-xs">دقيقة</p>
                     </div>
+                    {loc && (
+                      <div className="flex-1 bg-gray-900 border border-gray-800 rounded-2xl p-3 text-center">
+                        <p className="text-white font-black text-xl">
+                          {new Date(Date.now() + routeInfo.duration * 60000).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                        <p className="text-gray-500 text-xs">الوصول</p>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Buttons */}
+                  <div className="flex gap-3">
+                    <motion.button whileTap={{ scale: 0.95 }}
+                      onClick={() => { setShowSearch(true); setDestination(null); setRoutePoints([]); setRouteInfo(null); }}
+                      className="flex-1 bg-gray-800 border border-gray-700 text-gray-300 font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2">
+                      <Search size={15} />
+                      تغيير
+                    </motion.button>
+                    <motion.button whileTap={{ scale: 0.95 }}
+                      onClick={() => setFitTrigger(t => t + 1)}
+                      className="flex-2 bg-blue-500 text-white font-black py-3.5 px-6 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30">
+                      <Navigation size={16} />
+                      عرض المسار
+                    </motion.button>
+                  </div>
+                </>
+              ) : !loc ? (
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-3 text-center">
+                  <p className="text-yellow-400 text-sm">فعّل GPS لحساب المسار 🏍️</p>
                 </div>
-              ) : loc ? (
-                <p className="text-gray-500 text-xs text-center">تعذّر حساب المسار</p>
               ) : (
-                <p className="text-yellow-400 text-xs text-center">فعّل GPS لحساب المسار</p>
+                <p className="text-gray-500 text-sm text-center py-2">تعذّر حساب المسار</p>
               )}
             </div>
           </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
       {/* السرعة — مربع صغير شفاف يمين */}
       <div className="absolute top-14 right-3 z-[1000]">
@@ -1755,7 +1857,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           <Marker
             key={`me-${activePings["me"]?.ts || 0}`}
             position={[loc.lat, loc.lng]}
-            icon={createRiderIcon(profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
+            icon={getCachedIcon("me", profile?.full_name || "أنت", speed, true, profile?.avatar_url, activePings["me"]?.emoji)} />
         )}
 
         {/* بقية الدراجين */}
@@ -1763,7 +1865,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           <Marker
             key={`${r.id}-${activePings[r.id]?.ts || 0}`}
             position={[r.lat, r.lng]}
-            icon={createRiderIcon(r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url, activePings[r.id]?.emoji)}
+            icon={getCachedIcon(r.id, r.full_name, r.current_speed || 0, r.status === "online", r.avatar_url, activePings[r.id]?.emoji)}
             eventHandlers={{ click: () => onRiderProfile?.(r.id) }} />
         ))}
 
