@@ -737,6 +737,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
   const [unreadNotif, setUnreadNotif] = useState(0);
   const [openDMWith, setOpenDMWith] = useState(null);
   const [mapSelectedRider, setMapSelectedRider] = useState(null);
+  const [showMapSearch, setShowMapSearch] = useState(false);
 
   const sendPing = async (toRider, pingType) => {
     await supabase.from("quick_pings").insert({
@@ -894,12 +895,19 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
     <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="bg-gray-950/98 border-b border-gray-800/50 px-4 py-3 flex items-center justify-between shrink-0" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
-        <div className="flex items-center gap-1 bg-green-500/15 border border-green-500/20 rounded-full px-2 py-0.5">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-green-500/15 border border-green-500/20 rounded-full px-2 py-0.5">
             <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
               <div className="w-1.5 h-1.5 bg-green-400 rounded-full" />
             </motion.div>
             <span className="text-green-400 text-xs font-bold">{riders.filter(r => r.status === "online").length}</span>
           </div>
+          <motion.button whileTap={{ scale: 0.9 }}
+            onClick={() => { setActiveTab("map"); setTimeout(() => setShowMapSearch(true), 100); }}
+            className="w-7 h-7 bg-gray-800 border border-gray-700 rounded-full flex items-center justify-center">
+            <Search size={13} className="text-gray-400" />
+          </motion.button>
+        </div>
         <span className="text-orange-500 font-black text-lg tracking-widest">MOTO<span className="text-white">RIDERS</span></span>
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowNotifications(!showNotifications)}
           className="relative">
@@ -982,7 +990,7 @@ function MainApp({ session, profile, activeTab, setActiveTab, onSignOut }) {
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <AnimatePresence mode="wait">
-          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} trail={trail} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onRiderProfile={(id) => setMapSelectedRider(id)} />}
+          {activeTab === "map" && <MapTab key="map" riders={riders} profile={profile} loc={loc} speed={speed} gpsStatus={gpsStatus} tracking={tracking} stealth={stealth} setStealth={setStealth} toggleGPS={toggleGPS} activeRides={activeRides} trail={trail} onRiderDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onRiderProfile={(id) => setMapSelectedRider(id)} showSearch={showMapSearch} onSearchClose={() => setShowMapSearch(false)} />}
           {activeTab === "riders" && <RidersTab key="riders" riders={riders} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onPing={sendPing} />}
           {activeTab === "chat" && <ChatTab key="chat" profile={profile} openDMWith={openDMWith} onDMOpened={() => setOpenDMWith(null)} />}
           {activeTab === "leaderboard" && <LeaderboardTab key="leaderboard" profile={profile} onDM={(u) => { setOpenDMWith(u); setActiveTab("chat"); }} onPing={sendPing} />}
@@ -1071,7 +1079,7 @@ function FlyToLocation({ target }) {
   return null;
 }
 
-function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], trail = [], onRiderDM, onRiderProfile }) {
+function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], trail = [], onRiderDM, onRiderProfile, showSearch: showSearchProp, onSearchClose }) {
   // آخر موقع محفوظ
   const getLastLoc = () => {
     try {
@@ -1089,14 +1097,64 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   const [mapStyle, setMapStyle] = useState("dark");
   const [showStylePicker, setShowStylePicker] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+
+  // افتح البحث لما يُطلب من الهيدر
+  useEffect(() => {
+    if (showSearchProp) {
+      setShowSearch(true);
+      onSearchClose?.();
+      setTimeout(() => searchRef.current?.focus(), 150);
+    }
+  }, [showSearchProp]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [destination, setDestination] = useState(null); // { lat, lng, name }
+  const [destination, setDestination] = useState(null);
   const [flyTarget, setFlyTarget] = useState(null);
+  const [routePoints, setRoutePoints] = useState([]); // نقاط المسار
+  const [routeInfo, setRouteInfo] = useState(null);   // { distance, duration }
+  const [routeLoading, setRouteLoading] = useState(false);
   const searchRef = useRef(null);
   const mapRef = useRef(null);
   const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
+
+  // جلب المسار من OSRM
+  const fetchRoute = async (fromLat, fromLng, toLat, toLng) => {
+    setRouteLoading(true);
+    setRoutePoints([]);
+    setRouteInfo(null);
+    try {
+      const res = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`
+      );
+      const json = await res.json();
+      if (json.code === "Ok" && json.routes?.[0]) {
+        const route = json.routes[0];
+        // تحويل coordinates لـ [lat, lng]
+        const points = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        setRoutePoints(points);
+        setRouteInfo({
+          distance: (route.distance / 1000).toFixed(1), // كم
+          duration: Math.round(route.duration / 60),     // دقائق
+        });
+        // fly لنقطة البداية للمسار
+        setFlyTarget({ lat: fromLat, lng: fromLng });
+      }
+    } catch (e) {
+      console.error("Route error:", e);
+    }
+    setRouteLoading(false);
+  };
+
+  // تحديث المسار لما يتحرك المستخدم (كل 30 ثانية)
+  useEffect(() => {
+    if (!loc || !destination) return;
+    fetchRoute(loc.lat, loc.lng, destination.lat, destination.lng);
+    const interval = setInterval(() => {
+      fetchRoute(loc.lat, loc.lng, destination.lat, destination.lng);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [destination?.id, loc?.lat && Math.round(loc.lat * 1000), loc?.lng && Math.round(loc.lng * 1000)]);
 
   // البحث عن مكان باستخدام Nominatim
   const searchPlace = async (q) => {
@@ -1333,10 +1391,10 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
 
-      {/* ══ Search Bar ══ */}
+      {/* ══ Search Panel ══ */}
       <div className="absolute top-14 left-3 right-16 z-[1000]">
         <AnimatePresence>
-          {showSearch ? (
+          {showSearch && (
             <motion.div initial={{ opacity: 0, y: -8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.97 }}
               className="bg-black/70 backdrop-blur-xl border border-white/15 rounded-2xl overflow-hidden shadow-2xl">
@@ -1387,38 +1445,61 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
                 </div>
               )}
             </motion.div>
-          ) : (
-            <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => { setShowSearch(true); setTimeout(() => searchRef.current?.focus(), 100); }}
-              className="flex items-center gap-2 bg-black/50 backdrop-blur-xl border border-white/15 rounded-2xl px-4 py-2.5 shadow-lg w-full">
-              <span className="text-gray-400 text-sm flex-1 text-right">ابحث عن موقع...</span>
-              <Search size={15} className="text-gray-500 shrink-0" />
-            </motion.button>
           )}
         </AnimatePresence>
 
         {/* وجهة محددة — بطاقة أسفل البحث */}
         {destination && !showSearch && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-            className="mt-2 bg-black/60 backdrop-blur-xl border border-blue-500/30 rounded-2xl px-4 py-2.5 flex items-center gap-3">
-            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setDestination(null)}
-              className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0">
-              <X size={12} className="text-gray-300" />
-            </motion.button>
-            <div className="flex-1 text-right min-w-0">
-              <p className="text-blue-300 text-xs font-semibold truncate">📍 {destination.name}</p>
-              {loc && (
-                <p className="text-gray-500 text-[10px]">
-                  {(getDistance(loc.lat, loc.lng, destination.lat, destination.lng) / 1000).toFixed(1)} كم
-                </p>
+            className="mt-2 bg-black/70 backdrop-blur-xl border border-blue-500/30 rounded-2xl overflow-hidden shadow-xl">
+
+            {/* Header الوجهة */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/8">
+              <motion.button whileTap={{ scale: 0.9 }}
+                onClick={() => { setDestination(null); setRoutePoints([]); setRouteInfo(null); }}
+                className="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center shrink-0">
+                <X size={13} className="text-gray-300" />
+              </motion.button>
+              <div className="flex-1 text-right min-w-0">
+                <p className="text-white text-sm font-bold truncate">📍 {destination.name}</p>
+              </div>
+            </div>
+
+            {/* معلومات المسار */}
+            <div className="px-4 py-3">
+              {routeLoading ? (
+                <div className="flex items-center justify-center gap-2 py-1">
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                    <Loader size={14} className="text-blue-400" />
+                  </motion.div>
+                  <span className="text-gray-400 text-xs">جاري حساب المسار...</span>
+                </div>
+              ) : routeInfo ? (
+                <div className="flex items-center justify-between">
+                  <motion.button whileTap={{ scale: 0.95 }}
+                    onClick={() => setFlyTarget({ lat: destination.lat, lng: destination.lng })}
+                    className="bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5">
+                    <Navigation size={13} />
+                    اذهب
+                  </motion.button>
+                  <div className="flex items-center gap-3 text-right">
+                    <div>
+                      <p className="text-white font-black text-base leading-none">{routeInfo.distance}</p>
+                      <p className="text-gray-500 text-[10px]">كم</p>
+                    </div>
+                    <div className="w-px h-8 bg-white/10" />
+                    <div>
+                      <p className="text-white font-black text-base leading-none">{routeInfo.duration}</p>
+                      <p className="text-gray-500 text-[10px]">دقيقة</p>
+                    </div>
+                  </div>
+                </div>
+              ) : loc ? (
+                <p className="text-gray-500 text-xs text-center">تعذّر حساب المسار</p>
+              ) : (
+                <p className="text-yellow-400 text-xs text-center">فعّل GPS لحساب المسار</p>
               )}
             </div>
-            <motion.button whileTap={{ scale: 0.9 }}
-              onClick={() => setFlyTarget({ lat: destination.lat, lng: destination.lng })}
-              className="bg-blue-500/80 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shrink-0">
-              اذهب
-            </motion.button>
           </motion.div>
         )}
       </div>
@@ -1590,6 +1671,20 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           subdomains={currentStyle.subdomains || "abc"}
           maxZoom={19}
         />
+
+        {/* مسار الناڤيغيشن — أزرق */}
+        {routePoints.length > 1 && (
+          <>
+            {/* ظل المسار */}
+            <Polyline
+              positions={routePoints}
+              pathOptions={{ color: "#1d4ed8", weight: 8, opacity: 0.3, lineCap: "round", lineJoin: "round" }} />
+            {/* المسار الرئيسي */}
+            <Polyline
+              positions={routePoints}
+              pathOptions={{ color: "#3b82f6", weight: 5, opacity: 0.95, lineCap: "round", lineJoin: "round" }} />
+          </>
+        )}
 
         {/* مساري الشخصي — خط برتقالي */}
         {trail.length > 1 && !stealth && (
