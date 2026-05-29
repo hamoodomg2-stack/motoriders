@@ -1079,6 +1079,17 @@ function FlyToLocation({ target }) {
   return null;
 }
 
+function FitRouteBounds({ points, trigger }) {
+  const map = useMap();
+  useEffect(() => {
+    if (points?.length > 1 && trigger) {
+      const bounds = L.latLngBounds(points);
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16, duration: 1.2 });
+    }
+  }, [trigger]);
+  return null;
+}
+
 function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, setStealth, toggleGPS, activeRides = [], trail = [], onRiderDM, onRiderProfile, showSearch: showSearchProp, onSearchClose }) {
   // آخر موقع محفوظ
   const getLastLoc = () => {
@@ -1111,9 +1122,11 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   const [searchLoading, setSearchLoading] = useState(false);
   const [destination, setDestination] = useState(null);
   const [flyTarget, setFlyTarget] = useState(null);
-  const [routePoints, setRoutePoints] = useState([]); // نقاط المسار
-  const [routeInfo, setRouteInfo] = useState(null);   // { distance, duration }
+  const [routePoints, setRoutePoints] = useState([]);
+  const [routeInfo, setRouteInfo] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [fitTrigger, setFitTrigger] = useState(0);
+  const lastRecalcRef = useRef(0);
   const searchRef = useRef(null);
   const mapRef = useRef(null);
   const { alerts, addAlert, removeAlert, showAddAlert, setShowAddAlert } = useSafetyAlerts(loc, profile);
@@ -1146,15 +1159,33 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     setRouteLoading(false);
   };
 
-  // تحديث المسار لما يتحرك المستخدم (كل 30 ثانية)
+  // إعادة حساب المسار — تلقائي عند الخروج عنه أو كل 60 ثانية
   useEffect(() => {
-    if (!loc || !destination) return;
-    fetchRoute(loc.lat, loc.lng, destination.lat, destination.lng);
-    const interval = setInterval(() => {
+    if (!loc || !destination || !routePoints.length) return;
+
+    // فحص هل الموقع بعيد عن المسار أكثر من 50م
+    const distToRoute = routePoints.reduce((minDist, pt) => {
+      const d = getDistance(loc.lat, loc.lng, pt[0], pt[1]);
+      return Math.min(minDist, d);
+    }, Infinity);
+
+    const now = Date.now();
+    const timeSinceLastRecalc = now - lastRecalcRef.current;
+
+    if ((distToRoute > 50 && timeSinceLastRecalc > 10000) || timeSinceLastRecalc > 60000) {
+      lastRecalcRef.current = now;
       fetchRoute(loc.lat, loc.lng, destination.lat, destination.lng);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [destination?.id, loc?.lat && Math.round(loc.lat * 1000), loc?.lng && Math.round(loc.lng * 1000)]);
+    }
+  }, [loc?.lat, loc?.lng]);
+
+  // احسب المسار لأول مرة عند اختيار الوجهة
+  useEffect(() => {
+    if (!destination) { setRoutePoints([]); setRouteInfo(null); return; }
+    if (loc) {
+      lastRecalcRef.current = Date.now();
+      fetchRoute(loc.lat, loc.lng, destination.lat, destination.lng);
+    }
+  }, [destination?.id]);
 
   // البحث عن مكان باستخدام Nominatim
   const searchPlace = async (q) => {
@@ -1477,10 +1508,12 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
               ) : routeInfo ? (
                 <div className="flex items-center justify-between">
                   <motion.button whileTap={{ scale: 0.95 }}
-                    onClick={() => setFlyTarget({ lat: destination.lat, lng: destination.lng })}
+                    onClick={() => {
+                      setFitTrigger(t => t + 1);
+                    }}
                     className="bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5">
                     <Navigation size={13} />
-                    اذهب
+                    عرض المسار
                   </motion.button>
                   <div className="flex items-center gap-3 text-right">
                     <div>
@@ -1760,6 +1793,7 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         <RecenterMap loc={loc} trigger={recenterTrigger} />
         <ZoomListener onZoom={setMapZoom} />
         <FlyToLocation target={flyTarget} />
+        <FitRouteBounds points={routePoints} trigger={fitTrigger} />
 
         {/* وجهة البحث */}
         {destination && (
