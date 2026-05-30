@@ -1203,22 +1203,45 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     if (!q.trim()) { setSearchResults([]); return; }
     setSearchLoading(true);
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1&countrycodes=de&accept-language=ar,de`,
-        { headers: { "Accept-Language": "ar,de" } }
-      );
-      const data = await res.json();
-      setSearchResults(data.map(r => ({
+      const mapResult = (r) => ({
         id: r.place_id,
         name: r.display_name.split(",")[0].trim(),
         fullName: r.display_name,
         lat: parseFloat(r.lat),
         lng: parseFloat(r.lon),
         type: r.type,
-        city: r.address?.city || r.address?.town || r.address?.village || "",
-        road: r.address?.road || "",
+        city: r.address?.city || r.address?.town || r.address?.village || r.address?.suburb || "",
+        road: r.address?.road || r.address?.pedestrian || "",
         houseNumber: r.address?.house_number || "",
-      })));
+        postcode: r.address?.postcode || "",
+      });
+
+      // جرب البحث العادي أولاً
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1&countrycodes=de`,
+        { headers: { "User-Agent": "MotoRiders/1.0" } }
+      );
+      const data = await res.json();
+
+      if (data.length > 0) {
+        setSearchResults(data.map(mapResult));
+      } else {
+        // فصل رقم المنزل عن الشارع — "Fischerrain 95" → street=Fischerrain, housenumber=95
+        const numMatch = q.trim().match(/^(.*?)\s+(\d+\w*)\s*$/) || q.trim().match(/^(\d+\w*)\s+(.*)\s*$/);
+        if (numMatch) {
+          const isNumFirst = /^\d/.test(numMatch[1]);
+          const street = isNumFirst ? numMatch[2] : numMatch[1];
+          const house = isNumFirst ? numMatch[1] : numMatch[2];
+          const res2 = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(house + ' ' + street)}&limit=6&addressdetails=1&countrycodes=de`,
+            { headers: { "User-Agent": "MotoRiders/1.0" } }
+          );
+          const data2 = await res2.json();
+          setSearchResults(data2.map(mapResult));
+        } else {
+          setSearchResults([]);
+        }
+      }
     } catch { setSearchResults([]); }
     setSearchLoading(false);
   };
@@ -1526,9 +1549,13 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-white text-sm font-semibold leading-tight">
-                            {r.houseNumber ? `${r.road} ${r.houseNumber}` : r.name}
+                            {r.road && r.houseNumber
+                              ? `${r.road} ${r.houseNumber}`
+                              : r.road || r.name}
                           </p>
-                          <p className="text-gray-500 text-xs mt-0.5 truncate">{r.city || r.fullName.split(",").slice(1, 3).join("،")}</p>
+                          <p className="text-gray-500 text-xs mt-0.5 truncate">
+                            {[r.postcode, r.city].filter(Boolean).join(" ") || r.fullName.split(",").slice(1, 3).join("،")}
+                          </p>
                         </div>
                         <ChevronRight size={15} className="text-gray-600 shrink-0" />
                       </motion.button>
