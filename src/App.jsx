@@ -336,7 +336,6 @@ function useGPS(profileId, stealth) {
   const intervalRef = useRef(null);
   const lastRef = useRef(null);
   const locRef = useRef(null);
-  const locRef = useRef(null);
 
   const upload = useCallback(async (lat, lng, spd) => {
     if (!profileId || stealth) return;
