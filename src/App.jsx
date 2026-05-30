@@ -1454,15 +1454,15 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
           <>
             {/* Backdrop */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="absolute inset-0 z-[1999]"
+              className="fixed inset-0 z-[9998] bg-black/20"
               onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }} />
 
-            {/* Bottom Sheet */}
+            {/* Bottom Sheet — fixed فوق كل شي */}
             <motion.div
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="absolute bottom-0 left-0 right-0 z-[2000] bg-gray-950/98 backdrop-blur-2xl rounded-t-3xl border-t border-white/10 shadow-2xl"
-              style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}>
+              className="fixed bottom-0 left-0 right-0 z-[9999] bg-gray-950 rounded-t-3xl border-t border-white/10 shadow-2xl"
+              style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}>
 
               {/* Handle */}
               <div className="flex justify-center pt-3 pb-1">
@@ -1550,14 +1550,14 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         )}
       </AnimatePresence>
 
-      {/* وجهة محددة — بطاقة من الأسفل مثل Apple Maps */}
+      {/* وجهة محددة — fixed فوق الـ nav */}
       <AnimatePresence>
         {destination && !showSearch && (
           <motion.div
             initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="absolute bottom-0 left-0 right-0 z-[1000] bg-gray-950/98 backdrop-blur-2xl rounded-t-3xl border-t border-white/10 shadow-2xl"
-            style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}>
+            className="fixed bottom-0 left-0 right-0 z-[9997] bg-gray-950 rounded-t-3xl border-t border-white/10 shadow-2xl"
+            style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}>
 
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-2">
