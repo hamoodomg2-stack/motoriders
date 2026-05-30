@@ -1204,17 +1204,20 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
     setSearchLoading(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`,
-        { headers: { "Accept-Language": "ar,en" } }
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1&countrycodes=de&accept-language=ar,de`,
+        { headers: { "Accept-Language": "ar,de" } }
       );
       const data = await res.json();
       setSearchResults(data.map(r => ({
         id: r.place_id,
-        name: r.display_name.split(",").slice(0, 2).join("،"),
+        name: r.display_name.split(",")[0].trim(),
         fullName: r.display_name,
         lat: parseFloat(r.lat),
         lng: parseFloat(r.lon),
         type: r.type,
+        city: r.address?.city || r.address?.town || r.address?.village || "",
+        road: r.address?.road || "",
+        houseNumber: r.address?.house_number || "",
       })));
     } catch { setSearchResults([]); }
     setSearchLoading(false);
@@ -1448,57 +1451,68 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
 
-      {/* ══ Apple Maps Style Search — من الأسفل ══ */}
+      {/* ══ Apple Maps Style Search ══ */}
       <AnimatePresence>
         {showSearch && (
           <>
-            {/* Backdrop */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[9998] bg-black/20"
+              className="fixed inset-0 z-[9998] bg-black/30"
               onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }} />
 
-            {/* Bottom Sheet — fixed فوق كل شي */}
             <motion.div
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-[9999] bg-gray-950 rounded-t-3xl border-t border-white/10 shadow-2xl"
-              style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}>
+              transition={{ type: "spring", damping: 30, stiffness: 320 }}
+              className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#1c1c1e] rounded-t-3xl shadow-2xl"
+              style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}>
 
-              {/* Handle */}
-              <div className="flex justify-center pt-3 pb-1">
-                <div className="w-10 h-1 bg-gray-700 rounded-full" />
+              <div className="flex justify-center pt-3 pb-2">
+                <div className="w-9 h-1 bg-gray-600 rounded-full" />
+              </div>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 mb-3">
+                <motion.button whileTap={{ scale: 0.9 }}
+                  onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }}
+                  className="text-orange-400 text-sm font-semibold">
+                  إلغاء
+                </motion.button>
+                <p className="text-white font-bold text-sm">البحث في ألمانيا</p>
+                <div className="w-12" />
               </div>
 
               {/* Search Input */}
-              <div className="px-4 py-2">
-                <div className="flex items-center gap-3 bg-gray-800/80 border border-gray-700/50 rounded-2xl px-4 py-3">
+              <div className="px-4 mb-2">
+                <div className="flex items-center gap-2.5 bg-[#2c2c2e] rounded-2xl px-4 py-3">
                   {searchLoading
                     ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
                         <Loader size={16} className="text-orange-400 shrink-0" />
                       </motion.div>
-                    : <Search size={16} className="text-gray-400 shrink-0" />}
+                    : <Search size={16} className="text-gray-500 shrink-0" />}
                   <input
                     ref={searchRef}
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="ابحث — شارع، حي، مدينة، رقم منزل..."
+                    onKeyDown={e => e.key === "Escape" && setShowSearch(false)}
+                    placeholder="شارع، رقم، حي، مدينة..."
                     dir="rtl"
-                    className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm focus:outline-none text-right" />
+                    className="flex-1 bg-transparent text-white placeholder-gray-500 text-base focus:outline-none text-right" />
                   {searchQuery && (
                     <motion.button whileTap={{ scale: 0.9 }}
                       onClick={() => { setSearchQuery(""); setSearchResults([]); }}>
-                      <X size={15} className="text-gray-500" />
+                      <div className="w-5 h-5 bg-gray-600 rounded-full flex items-center justify-center">
+                        <X size={11} className="text-gray-300" />
+                      </div>
                     </motion.button>
                   )}
                 </div>
               </div>
 
               {/* النتائج */}
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-80 overflow-y-auto">
                 {searchResults.length > 0 ? (
-                  <div className="px-2 pb-2">
+                  <div className="px-4">
                     {searchResults.map((r, i) => (
-                      <motion.button key={r.id} whileTap={{ scale: 0.98 }}
+                      <motion.button key={r.id} whileTap={{ backgroundColor: "rgba(255,255,255,0.05)" }}
                         onClick={() => {
                           setDestination(r);
                           setFlyTarget({ lat: r.lat, lng: r.lng });
@@ -1506,39 +1520,40 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
                           setSearchQuery("");
                           setSearchResults([]);
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-right active:bg-white/5 transition-all">
-                        <div className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center shrink-0 text-base">
-                          {r.type === "restaurant" ? "🍽️" : r.type === "fuel" ? "⛽" : r.type === "hospital" ? "🏥" : r.type === "road" ? "🛣️" : "📍"}
+                        className={`w-full flex items-center gap-3 py-3 text-right ${i < searchResults.length - 1 ? "border-b border-white/6" : ""}`}>
+                        <div className="w-10 h-10 bg-[#2c2c2e] rounded-full flex items-center justify-center shrink-0 text-lg">
+                          {r.type === "restaurant" ? "🍽️" : r.type === "fuel" ? "⛽" : r.type === "hospital" ? "🏥" : r.type === "road" ? "🛣️" : r.houseNumber ? "🏠" : "📍"}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-white text-sm font-semibold truncate">{r.name}</p>
-                          <p className="text-gray-500 text-xs truncate mt-0.5">{r.fullName.split(",").slice(2, 5).join("،")}</p>
+                          <p className="text-white text-sm font-semibold leading-tight">
+                            {r.houseNumber ? `${r.road} ${r.houseNumber}` : r.name}
+                          </p>
+                          <p className="text-gray-500 text-xs mt-0.5 truncate">{r.city || r.fullName.split(",").slice(1, 3).join("،")}</p>
                         </div>
-                        <ArrowRight size={14} className="text-gray-600 shrink-0 rotate-180" />
+                        <ChevronRight size={15} className="text-gray-600 shrink-0" />
                       </motion.button>
                     ))}
                   </div>
                 ) : searchQuery && !searchLoading ? (
-                  <div className="flex flex-col items-center gap-2 py-8 text-gray-600">
-                    <Search size={32} className="opacity-30" />
-                    <p className="text-sm">لا نتائج لـ "{searchQuery}"</p>
-                    <p className="text-xs text-gray-700">جرب كتابة العنوان بالكامل</p>
+                  <div className="flex flex-col items-center gap-2 py-10 text-gray-600">
+                    <Search size={32} className="opacity-20" />
+                    <p className="text-sm">لا نتائج في ألمانيا</p>
                   </div>
                 ) : !searchQuery ? (
-                  <div className="px-4 pb-4">
-                    <p className="text-gray-600 text-xs text-right mb-2">مقترحات</p>
+                  <div className="px-4 pb-2">
+                    <p className="text-gray-600 text-xs font-semibold mb-2 text-right">مقترحات</p>
                     {[
-                      { icon: "🏠", label: "المنزل", hint: "مثال: Musterstraße 1, Berlin" },
-                      { icon: "⛽", label: "أقرب محطة وقود", hint: "Tankstelle in der Nähe" },
-                      { icon: "🏍️", label: "مسار دراجات", hint: "Motorradstrecke" },
+                      { icon: "⛽", label: "Tankstelle", sub: "محطة وقود" },
+                      { icon: "🏍️", label: "Motorradstrecke", sub: "مسار دراجات" },
+                      { icon: "🏥", label: "Krankenhaus", sub: "مستشفى" },
                     ].map((s, i) => (
                       <motion.button key={i} whileTap={{ scale: 0.97 }}
-                        onClick={() => { setSearchQuery(s.hint); searchRef.current?.focus(); }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-right active:bg-white/5 transition-all">
-                        <div className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center shrink-0 text-base">{s.icon}</div>
+                        onClick={() => { setSearchQuery(s.label); setTimeout(() => searchRef.current?.focus(), 50); }}
+                        className={`w-full flex items-center gap-3 py-3 ${i < 2 ? "border-b border-white/6" : ""}`}>
+                        <div className="w-10 h-10 bg-[#2c2c2e] rounded-full flex items-center justify-center shrink-0 text-lg">{s.icon}</div>
                         <div className="text-right">
-                          <p className="text-gray-300 text-sm font-medium">{s.label}</p>
-                          <p className="text-gray-600 text-xs">{s.hint}</p>
+                          <p className="text-white text-sm font-medium">{s.label}</p>
+                          <p className="text-gray-500 text-xs">{s.sub}</p>
                         </div>
                       </motion.button>
                     ))}
@@ -1550,14 +1565,14 @@ function MapTab({ riders, profile, loc, speed, gpsStatus, tracking, stealth, set
         )}
       </AnimatePresence>
 
-      {/* وجهة محددة — fixed فوق الـ nav */}
+      {/* وجهة محددة */}
       <AnimatePresence>
         {destination && !showSearch && (
           <motion.div
             initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="fixed bottom-0 left-0 right-0 z-[9997] bg-gray-950 rounded-t-3xl border-t border-white/10 shadow-2xl"
-            style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}>
+            transition={{ type: "spring", damping: 30, stiffness: 320 }}
+            className="fixed bottom-0 left-0 right-0 z-[9997] bg-[#1c1c1e] rounded-t-3xl shadow-2xl"
+            style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}>
 
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-2">
